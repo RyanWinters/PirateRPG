@@ -2,6 +2,7 @@ extends Node
 class_name GameState
 
 const CrewMember = preload("res://systems/CrewMember.gd")
+const ExpeditionTemplates = preload("res://systems/ExpeditionTemplates.gd")
 
 enum Phase {
 	PICKPOCKET,
@@ -75,6 +76,7 @@ var _pickpocket_xp: int = 0
 var _unlocked_upgrades: Array[StringName] = []
 var _crew_slots_unlocked: int = 0
 var _street_events: StreetEvents = StreetEvents.new()
+var _expedition_templates: ExpeditionTemplates = ExpeditionTemplates.new()
 var _street_event_action_counter: int = 0
 
 
@@ -164,6 +166,32 @@ func get_phase() -> int:
 
 func is_first_crew_slot_unlocked() -> bool:
 	return _crew_slots_unlocked >= 1
+
+
+func get_expedition_template(template_key: StringName) -> Dictionary:
+	return _expedition_templates.get_template(template_key)
+
+
+func list_unlocked_expedition_templates() -> Array[Dictionary]:
+	return _expedition_templates.list_unlocked_templates(_build_expedition_progression_state())
+
+
+func get_expedition_simulation(template_key: StringName, rng: RandomNumberGenerator = null) -> Dictionary:
+	if get_expedition_template(template_key).is_empty():
+		return {}
+	return _expedition_templates.simulate_expedition(template_key, _build_crew_stat_profile(), rng)
+
+
+func resolve_expedition_risk(template_key: StringName, rng: RandomNumberGenerator = null) -> Dictionary:
+	if get_expedition_template(template_key).is_empty():
+		return {}
+	return _expedition_templates.resolve_risk_outcome(template_key, _build_crew_stat_profile(), rng)
+
+
+func resolve_expedition_rewards(template_key: StringName, risk_outcome: Dictionary, rng: RandomNumberGenerator = null) -> Dictionary:
+	if get_expedition_template(template_key).is_empty():
+		return {}
+	return _expedition_templates.resolve_rewards(template_key, risk_outcome, rng)
 
 
 
@@ -894,3 +922,36 @@ func _get_gold_income_per_second_for_phase(phase: int) -> float:
 			return 3.0
 		_:
 			return 5.0
+
+
+func _build_expedition_progression_state() -> Dictionary:
+	return {
+		"phase": _phase,
+		"crew_count": _crew_roster.size(),
+		"crew_stats": _build_crew_stat_profile(),
+		"upgrades": _unlocked_upgrades.duplicate(),
+	}
+
+
+func _build_crew_stat_profile() -> Dictionary:
+	if _crew_roster.is_empty():
+		return {
+			"combat": 0.0,
+			"stealth": 0.0,
+			"loyalty": 0.0,
+		}
+
+	var total_combat: float = 0.0
+	var total_stealth: float = 0.0
+	var total_loyalty: float = 0.0
+	for crew_member: CrewMember in _crew_roster:
+		total_combat += crew_member.combat
+		total_stealth += crew_member.stealth
+		total_loyalty += crew_member.loyalty
+
+	var crew_count: float = float(_crew_roster.size())
+	return {
+		"combat": total_combat / crew_count,
+		"stealth": total_stealth / crew_count,
+		"loyalty": total_loyalty / crew_count,
+	}
