@@ -22,6 +22,8 @@ class_name EventBus
 #   Broadcast when a pickpocket upgrade gate is unlocked.
 # - pickpocket_crew_slot_unlocked(total_slots, unlocked_at_level)
 #   Broadcast when progression unlocks additional crew slots.
+# - street_event_triggered(event_id, payload)
+#   Broadcast when the street-event subsystem triggers an event outcome.
 
 signal resource_changed(resource_name: StringName, old_value: int, new_value: int, source: StringName)
 signal phase_changed(old_phase: int, new_phase: int, reason: StringName)
@@ -33,3 +35,4 @@ signal passive_income_tick(gold_gained: int, tick_interval_seconds: float)
 signal pickpocket_level_up(previous_level: int, new_level: int, total_xp: int)
 signal pickpocket_upgrade_unlocked(upgrade_id: StringName, unlocked_at_level: int)
 signal pickpocket_crew_slot_unlocked(total_slots: int, unlocked_at_level: int)
+signal street_event_triggered(event_id: StringName, payload: Dictionary)
