@@ -9,6 +9,10 @@ class_name SaveManager
 # - current_phase: integer progression phase.
 # - last_save_unix: integer unix timestamp for most recent write.
 # - last_active_unix: integer unix timestamp for most recent in-session activity.
+# - pickpocket_level: integer progression level for pickpocket loop.
+# - pickpocket_xp: integer total progression xp.
+# - unlocked_upgrades: Array[String] of unlocked pickpocket upgrade ids.
+# - crew_slots_unlocked: integer crew slots unlocked from pickpocket progression.
 const SAVE_PATH := "user://savegame.json"
 const SAVE_VERSION := 1
 
@@ -34,6 +38,10 @@ const DEFAULT_SAVE_STATE := {
 	"last_active_unix": 0,
 	"last_steal_click_msec": -225,
 	"passive_tick_accumulator": 0.0,
+	"pickpocket_level": 1,
+	"pickpocket_xp": 0,
+	"unlocked_upgrades": [],
+	"crew_slots_unlocked": 0,
 }
 
 
@@ -145,6 +153,20 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 	normalized["last_active_unix"] = maxi(0, int(payload.get("last_active_unix", normalized["last_active_unix"])))
 	normalized["last_steal_click_msec"] = int(payload.get("last_steal_click_msec", normalized["last_steal_click_msec"]))
 	normalized["passive_tick_accumulator"] = clampf(float(payload.get("passive_tick_accumulator", normalized["passive_tick_accumulator"])), 0.0, 1.0)
+	normalized["pickpocket_level"] = maxi(1, int(payload.get("pickpocket_level", normalized["pickpocket_level"])))
+	normalized["pickpocket_xp"] = maxi(0, int(payload.get("pickpocket_xp", normalized["pickpocket_xp"])))
+	normalized["crew_slots_unlocked"] = maxi(0, int(payload.get("crew_slots_unlocked", normalized["crew_slots_unlocked"])))
+
+	var incoming_upgrades: Variant = payload.get("unlocked_upgrades", normalized["unlocked_upgrades"])
+	if typeof(incoming_upgrades) == TYPE_ARRAY:
+		var normalized_upgrades: Array = []
+		for upgrade_id: Variant in incoming_upgrades:
+			var normalized_upgrade_id: String = str(upgrade_id)
+			if normalized_upgrades.has(normalized_upgrade_id):
+				continue
+			normalized_upgrades.append(normalized_upgrade_id)
+		normalized["unlocked_upgrades"] = normalized_upgrades
+
 	normalized["save_version"] = SAVE_VERSION
 
 	return normalized

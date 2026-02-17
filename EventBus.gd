@@ -16,6 +16,12 @@ class_name EventBus
 #   Broadcast when steal_click is attempted so UI can render gain/cooldown feedback.
 # - passive_income_tick(gold_gained, tick_interval_seconds)
 #   Broadcast when the passive street hustle tick grants resources.
+# - pickpocket_level_up(previous_level, new_level, total_xp)
+#   Broadcast when pickpocket progression reaches one or more new levels.
+# - pickpocket_upgrade_unlocked(upgrade_id, unlocked_at_level)
+#   Broadcast when a pickpocket upgrade gate is unlocked.
+# - pickpocket_crew_slot_unlocked(total_slots, unlocked_at_level)
+#   Broadcast when progression unlocks additional crew slots.
 
 signal resource_changed(resource_name: StringName, old_value: int, new_value: int, source: StringName)
 signal phase_changed(old_phase: int, new_phase: int, reason: StringName)
@@ -24,3 +30,6 @@ signal offline_progress_ready(elapsed_seconds: int)
 signal debug_command_feedback(success: bool, command: String, message: String)
 signal steal_click_resolved(success: bool, gold_gained: int, cooldown_remaining_msec: int)
 signal passive_income_tick(gold_gained: int, tick_interval_seconds: float)
+signal pickpocket_level_up(previous_level: int, new_level: int, total_xp: int)
+signal pickpocket_upgrade_unlocked(upgrade_id: StringName, unlocked_at_level: int)
+signal pickpocket_crew_slot_unlocked(total_slots: int, unlocked_at_level: int)

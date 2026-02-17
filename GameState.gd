@@ -24,6 +24,26 @@ const STEAL_CLICK_PHASE_MULTIPLIER: float = 0.45
 const STEAL_CLICK_COOLDOWN_MSEC: int = 225
 const PASSIVE_TICK_INTERVAL_SECONDS: float = 1.0
 
+const PICKPOCKET_MAX_LEVEL: int = 5
+const PICKPOCKET_CLICK_XP_GAIN: int = 1
+const PICKPOCKET_PASSIVE_TICK_XP_GAIN: int = 1
+const PICKPOCKET_LEVEL_XP_THRESHOLDS: Dictionary = {
+	1: 0,
+	2: 25,
+	3: 75,
+	4: 160,
+	5: 300,
+}
+const PICKPOCKET_UPGRADE_UNLOCK_GATES: Dictionary = {
+	2: [&"quick_hands"],
+	3: [&"crowd_reader"],
+	4: [&"lock_tumbler"],
+	5: [&"ghost_step"],
+}
+const PICKPOCKET_CREW_SLOT_UNLOCK_GATES: Dictionary = {
+	2: 1,
+}
+
 @export var save_manager_path: NodePath = NodePath("/root/SaveManager")
 @export var time_manager_path: NodePath = NodePath("/root/TimeManager")
 
@@ -38,6 +58,10 @@ var _last_save_unix: int = 0
 var _last_active_unix: int = 0
 var _last_steal_click_msec: int = -STEAL_CLICK_COOLDOWN_MSEC
 var _passive_tick_accumulator: float = 0.0
+var _pickpocket_level: int = 1
+var _pickpocket_xp: int = 0
+var _unlocked_upgrades: Array[StringName] = []
+var _crew_slots_unlocked: int = 0
 
 
 func _ready() -> void:
@@ -77,6 +101,7 @@ func steal_click() -> bool:
 	_last_steal_click_msec = now_msec
 	var gold_gained: int = _calculate_steal_click_gold_gain()
 	add_resource(&"gold", gold_gained, &"GameState.steal_click")
+	_apply_pickpocket_progress(PICKPOCKET_CLICK_XP_GAIN, &"GameState.steal_click")
 	EventBus.steal_click_resolved.emit(true, gold_gained, 0)
 	return true
 
@@ -111,6 +136,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func get_phase() -> int:
 	return _phase
+
+
+func is_first_crew_slot_unlocked() -> bool:
+	return _crew_slots_unlocked >= 1
 
 
 func set_phase(new_phase: int, reason: StringName = &"GameState.set_phase") -> void:
@@ -196,6 +225,10 @@ func _build_save_state() -> Dictionary:
 		"last_active_unix": _last_active_unix,
 		"last_steal_click_msec": _last_steal_click_msec,
 		"passive_tick_accumulator": _passive_tick_accumulator,
+		"pickpocket_level": _pickpocket_level,
+		"pickpocket_xp": _pickpocket_xp,
+		"unlocked_upgrades": _unlocked_upgrades.duplicate(),
+		"crew_slots_unlocked": _crew_slots_unlocked,
 	}
 
 
@@ -216,6 +249,13 @@ func _apply_loaded_state(state: Dictionary) -> void:
 	_last_active_unix = int(state.get("last_active_unix", 0))
 	_last_steal_click_msec = int(state.get("last_steal_click_msec", _last_steal_click_msec))
 	_passive_tick_accumulator = clampf(float(state.get("passive_tick_accumulator", 0.0)), 0.0, PASSIVE_TICK_INTERVAL_SECONDS)
+	_pickpocket_level = clampi(int(state.get("pickpocket_level", _pickpocket_level)), 1, PICKPOCKET_MAX_LEVEL)
+	_pickpocket_xp = maxi(0, int(state.get("pickpocket_xp", _pickpocket_xp)))
+	if _pickpocket_xp < _get_pickpocket_level_xp_threshold(_pickpocket_level):
+		_pickpocket_xp = _get_pickpocket_level_xp_threshold(_pickpocket_level)
+	_unlocked_upgrades = _normalize_unlocked_upgrades(state.get("unlocked_upgrades", _unlocked_upgrades))
+	_crew_slots_unlocked = maxi(0, int(state.get("crew_slots_unlocked", _crew_slots_unlocked)))
+	_reconcile_pickpocket_progression(false, &"SaveManager.load_game")
 
 
 func execute_debug_command(raw_command: String) -> bool:
@@ -508,6 +548,7 @@ func _on_offline_progress_ready(elapsed_seconds: int) -> void:
 		add_resource(&"gold", offline_gold, &"GameState.offline_progress")
 	if simulated_ticks > 0:
 		add_resource(&"food", simulated_ticks, &"GameState.offline_progress_ticks")
+		_apply_pickpocket_progress(simulated_ticks * PICKPOCKET_PASSIVE_TICK_XP_GAIN, &"GameState.offline_progress_ticks")
 
 
 func _apply_passive_income_tick() -> void:
@@ -515,7 +556,74 @@ func _apply_passive_income_tick() -> void:
 	if passive_gold <= 0:
 		return
 	add_resource(&"gold", passive_gold, &"GameState.passive_income")
+	_apply_pickpocket_progress(PICKPOCKET_PASSIVE_TICK_XP_GAIN, &"GameState.passive_income")
 	EventBus.passive_income_tick.emit(passive_gold, PASSIVE_TICK_INTERVAL_SECONDS)
+
+
+func _apply_pickpocket_progress(xp_delta: int, source: StringName) -> void:
+	if xp_delta <= 0:
+		return
+	_pickpocket_xp += xp_delta
+	_reconcile_pickpocket_progression(true, source)
+
+
+func _reconcile_pickpocket_progression(emit_events: bool, _source: StringName) -> void:
+	var previous_level: int = _pickpocket_level
+	_pickpocket_level = _resolve_pickpocket_level_from_xp(_pickpocket_xp)
+	if emit_events and _pickpocket_level > previous_level:
+		EventBus.pickpocket_level_up.emit(previous_level, _pickpocket_level, _pickpocket_xp)
+
+	for level_gate: int in PICKPOCKET_UPGRADE_UNLOCK_GATES.keys():
+		if level_gate > _pickpocket_level:
+			continue
+		var upgrades_for_level: Array = PICKPOCKET_UPGRADE_UNLOCK_GATES[level_gate]
+		for upgrade_variant: Variant in upgrades_for_level:
+			var upgrade_id: StringName = StringName(str(upgrade_variant))
+			if _unlocked_upgrades.has(upgrade_id):
+				continue
+			_unlocked_upgrades.append(upgrade_id)
+			if emit_events:
+				EventBus.pickpocket_upgrade_unlocked.emit(upgrade_id, level_gate)
+
+	var highest_unlocked_slots: int = _crew_slots_unlocked
+	var crew_slot_unlock_level: int = -1
+	for level_gate: int in PICKPOCKET_CREW_SLOT_UNLOCK_GATES.keys():
+		if level_gate > _pickpocket_level:
+			continue
+		var slots_for_level: int = int(PICKPOCKET_CREW_SLOT_UNLOCK_GATES[level_gate])
+		if slots_for_level <= highest_unlocked_slots:
+			continue
+		highest_unlocked_slots = slots_for_level
+		crew_slot_unlock_level = level_gate
+	if highest_unlocked_slots > _crew_slots_unlocked:
+		_crew_slots_unlocked = highest_unlocked_slots
+		if emit_events:
+			EventBus.pickpocket_crew_slot_unlocked.emit(_crew_slots_unlocked, crew_slot_unlock_level)
+
+
+func _resolve_pickpocket_level_from_xp(total_xp: int) -> int:
+	var resolved_level: int = 1
+	for level_key: int in PICKPOCKET_LEVEL_XP_THRESHOLDS.keys():
+		if total_xp < int(PICKPOCKET_LEVEL_XP_THRESHOLDS[level_key]):
+			continue
+		resolved_level = maxi(resolved_level, level_key)
+	return clampi(resolved_level, 1, PICKPOCKET_MAX_LEVEL)
+
+
+func _get_pickpocket_level_xp_threshold(level: int) -> int:
+	return int(PICKPOCKET_LEVEL_XP_THRESHOLDS.get(level, 0))
+
+
+func _normalize_unlocked_upgrades(raw_value: Variant) -> Array[StringName]:
+	var normalized: Array[StringName] = []
+	if typeof(raw_value) != TYPE_ARRAY:
+		return normalized
+	for upgrade_variant: Variant in raw_value:
+		var upgrade_id: StringName = StringName(str(upgrade_variant))
+		if normalized.has(upgrade_id):
+			continue
+		normalized.append(upgrade_id)
+	return normalized
 
 
 func _calculate_steal_click_gold_gain() -> int:
