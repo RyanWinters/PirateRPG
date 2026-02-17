@@ -9,6 +9,9 @@ var _active_expeditions: Dictionary = {}
 var _runtime_counter: int = 0
 
 
+const DEFAULT_OFFLINE_CHUNK_SECONDS: int = 60
+
+
 func configure(event_bus: EventBus) -> void:
 	_event_bus = event_bus
 
@@ -53,6 +56,9 @@ func start_expedition(template_key: StringName, crew_ids: PackedStringArray, sta
 		"crew_ids": crew_ids,
 		"start_unix": start_unix,
 		"eta_unix": eta_unix,
+		"duration_seconds": maxi(1, eta_unix - start_unix),
+		"progress_seconds": 0,
+		"last_progress_unix": start_unix,
 		"completed_unix": 0,
 		"status": STATUS_ACTIVE,
 		"rewards": {},
@@ -66,22 +72,36 @@ func process_time_tick(now_unix: int, reward_resolver: Callable) -> Array[Dictio
 	var completed: Array[Dictionary] = []
 	for expedition_id: StringName in _active_expeditions.keys():
 		var runtime_payload: Dictionary = _active_expeditions[expedition_id] as Dictionary
-		if StringName(runtime_payload.get("status", "")) != STATUS_ACTIVE:
+		if not _is_payload_active(runtime_payload):
 			continue
 		if now_unix < int(runtime_payload.get("eta_unix", 0)):
+			_update_progress(runtime_payload, now_unix)
+			_active_expeditions[expedition_id] = runtime_payload
 			continue
-		var template_key: StringName = StringName(str(runtime_payload.get("template_key", "")))
-		var rewards: Dictionary = {}
-		if reward_resolver.is_valid():
-			var resolved: Variant = reward_resolver.call(template_key)
-			if typeof(resolved) == TYPE_DICTIONARY:
-				rewards = (resolved as Dictionary).duplicate(true)
-		runtime_payload["status"] = STATUS_CLAIMABLE
-		runtime_payload["completed_unix"] = now_unix
-		runtime_payload["rewards"] = rewards
+		_mark_payload_complete(runtime_payload, reward_resolver, int(runtime_payload.get("eta_unix", now_unix)))
 		_active_expeditions[expedition_id] = runtime_payload
 		completed.append(runtime_payload.duplicate(true))
 		_emit_completed(runtime_payload)
+	return completed
+
+
+func process_offline_elapsed(elapsed_seconds: int, now_unix: int, reward_resolver: Callable, chunk_seconds: int = DEFAULT_OFFLINE_CHUNK_SECONDS) -> Array[Dictionary]:
+	var completed: Array[Dictionary] = []
+	if elapsed_seconds <= 0:
+		return completed
+	if chunk_seconds <= 0:
+		chunk_seconds = DEFAULT_OFFLINE_CHUNK_SECONDS
+
+	var simulation_now: int = now_unix - elapsed_seconds
+	var remaining: int = elapsed_seconds
+	while remaining > 0:
+		var chunk_size: int = mini(chunk_seconds, remaining)
+		simulation_now += chunk_size
+		remaining -= chunk_size
+		var chunk_completed: Array[Dictionary] = process_time_tick(simulation_now, reward_resolver)
+		for payload: Dictionary in chunk_completed:
+			completed.append(payload)
+
 	return completed
 
 
@@ -116,12 +136,23 @@ func _normalize_runtime_payload(expedition_id: StringName, payload: Dictionary) 
 	var template_key: StringName = StringName(str(payload.get("template_key", "")))
 	var start_unix: int = maxi(0, int(payload.get("start_unix", 0)))
 	var eta_unix: int = maxi(start_unix, int(payload.get("eta_unix", start_unix)))
+	var duration_seconds: int = maxi(1, int(payload.get("duration_seconds", eta_unix - start_unix)))
+	if eta_unix <= start_unix:
+		eta_unix = start_unix + duration_seconds
+	else:
+		duration_seconds = maxi(1, eta_unix - start_unix)
 	var status: StringName = StringName(str(payload.get("status", String(STATUS_ACTIVE))))
 	if status != STATUS_ACTIVE and status != STATUS_CLAIMABLE:
 		status = STATUS_ACTIVE
 	var completed_unix: int = maxi(0, int(payload.get("completed_unix", 0)))
 	if status == STATUS_CLAIMABLE and completed_unix <= 0:
 		completed_unix = eta_unix
+	var progress_seconds: int = clampi(int(payload.get("progress_seconds", 0)), 0, duration_seconds)
+	if status == STATUS_CLAIMABLE:
+		progress_seconds = duration_seconds
+	var last_progress_unix: int = clampi(int(payload.get("last_progress_unix", start_unix)), start_unix, eta_unix)
+	if status == STATUS_CLAIMABLE:
+		last_progress_unix = eta_unix
 	var rewards: Dictionary = {}
 	var reward_variant: Variant = payload.get("rewards", {})
 	if typeof(reward_variant) == TYPE_DICTIONARY:
@@ -134,19 +165,49 @@ func _normalize_runtime_payload(expedition_id: StringName, payload: Dictionary) 
 	elif typeof(crew_variant) == TYPE_ARRAY:
 		for crew_id_variant: Variant in crew_variant:
 			normalized_crew_ids.append(str(crew_id_variant))
-	if normalized_crew_ids.is_empty():
-		return {}
-
 	return {
 		"expedition_id": expedition_id,
 		"template_key": template_key,
 		"crew_ids": normalized_crew_ids,
 		"start_unix": start_unix,
 		"eta_unix": eta_unix,
+		"duration_seconds": duration_seconds,
+		"progress_seconds": progress_seconds,
+		"last_progress_unix": last_progress_unix,
 		"completed_unix": completed_unix,
 		"status": status,
 		"rewards": rewards,
 	}
+
+
+func _is_payload_active(runtime_payload: Dictionary) -> bool:
+	return StringName(runtime_payload.get("status", "")) == STATUS_ACTIVE
+
+
+func _update_progress(runtime_payload: Dictionary, now_unix: int) -> void:
+	var start_unix: int = int(runtime_payload.get("start_unix", 0))
+	var eta_unix: int = int(runtime_payload.get("eta_unix", start_unix))
+	var duration_seconds: int = maxi(1, int(runtime_payload.get("duration_seconds", eta_unix - start_unix)))
+	var clamped_now: int = clampi(now_unix, start_unix, eta_unix)
+	runtime_payload["last_progress_unix"] = clamped_now
+	runtime_payload["progress_seconds"] = clampi(clamped_now - start_unix, 0, duration_seconds)
+
+
+func _mark_payload_complete(runtime_payload: Dictionary, reward_resolver: Callable, completed_unix: int) -> void:
+	var template_key: StringName = StringName(str(runtime_payload.get("template_key", "")))
+	var rewards: Dictionary = {}
+	if reward_resolver.is_valid():
+		var resolved: Variant = reward_resolver.call(template_key)
+		if typeof(resolved) == TYPE_DICTIONARY:
+			rewards = (resolved as Dictionary).duplicate(true)
+	var start_unix: int = int(runtime_payload.get("start_unix", 0))
+	var eta_unix: int = int(runtime_payload.get("eta_unix", start_unix))
+	var duration_seconds: int = maxi(1, int(runtime_payload.get("duration_seconds", eta_unix - start_unix)))
+	runtime_payload["status"] = STATUS_CLAIMABLE
+	runtime_payload["completed_unix"] = maxi(start_unix, completed_unix)
+	runtime_payload["last_progress_unix"] = eta_unix
+	runtime_payload["progress_seconds"] = duration_seconds
+	runtime_payload["rewards"] = rewards
 
 
 func _emit_started(runtime_payload: Dictionary) -> void:

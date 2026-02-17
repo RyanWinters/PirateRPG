@@ -390,7 +390,6 @@ func load_state() -> void:
 	var time_manager: TimeManager = _get_time_manager()
 	if time_manager != null:
 		time_manager.begin_offline_cycle_from_save_data(loaded_state)
-	_expedition_system.process_time_tick(Time.get_unix_time_from_system(), Callable(self, "_resolve_expedition_rewards_for_runtime"))
 
 
 func _build_save_state() -> Dictionary:
@@ -841,6 +840,7 @@ func _on_offline_progress_ready(elapsed_seconds: int) -> void:
 	var simulated_ticks: int = 0
 	if time_manager != null:
 		simulated_ticks = time_manager.elapsed_to_ticks(elapsed_seconds)
+	_process_offline_expeditions(elapsed_seconds, time_manager)
 	var gold_per_second: float = _get_gold_income_per_second_for_phase(_phase)
 	var offline_gold: int = int(round(elapsed_seconds * gold_per_second))
 	if offline_gold > 0:
@@ -848,6 +848,20 @@ func _on_offline_progress_ready(elapsed_seconds: int) -> void:
 	if simulated_ticks > 0:
 		add_resource(&"food", simulated_ticks, &"GameState.offline_progress_ticks")
 		_apply_pickpocket_progress(simulated_ticks * PICKPOCKET_PASSIVE_TICK_XP_GAIN, &"GameState.offline_progress_ticks")
+
+
+func _process_offline_expeditions(elapsed_seconds: int, time_manager: TimeManager) -> void:
+	if elapsed_seconds <= 0:
+		return
+	var chunk_seconds: int = TimeManager.BASE_OFFLINE_TICK_SECONDS
+	if time_manager != null:
+		chunk_seconds = maxi(1, time_manager.get_offline_expedition_chunk_seconds())
+	_expedition_system.process_offline_elapsed(
+		elapsed_seconds,
+		Time.get_unix_time_from_system(),
+		Callable(self, "_resolve_expedition_rewards_for_runtime"),
+		chunk_seconds
+	)
 
 
 func _apply_passive_income_tick() -> void:

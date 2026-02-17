@@ -5,8 +5,10 @@ signal second_tick(now_unix: int)
 
 const BASE_OFFLINE_TICK_SECONDS: int = 10
 const DEFAULT_MAX_OFFLINE_SECONDS: int = 60 * 60 * 8
+const DEFAULT_OFFLINE_EXPEDITION_CHUNK_SECONDS: int = 60
 
 @export var max_offline_seconds: int = DEFAULT_MAX_OFFLINE_SECONDS
+@export var offline_expedition_chunk_seconds: int = DEFAULT_OFFLINE_EXPEDITION_CHUNK_SECONDS
 @export var debug_logging_enabled: bool = false
 
 var _last_emitted_elapsed_seconds: int = 0
@@ -72,6 +74,10 @@ func elapsed_to_chunks(elapsed_seconds: int, chunk_seconds: int) -> Array:
 
 func get_last_emitted_elapsed_seconds() -> int:
 	return _last_emitted_elapsed_seconds
+
+
+func get_offline_expedition_chunk_seconds() -> int:
+	return maxi(1, offline_expedition_chunk_seconds)
 
 
 func _emit_offline_progress_once(elapsed_seconds: int) -> void:
