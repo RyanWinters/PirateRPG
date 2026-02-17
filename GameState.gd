@@ -1,6 +1,8 @@
 extends Node
 class_name GameState
 
+const CrewMember = preload("res://systems/CrewMember.gd")
+
 enum Phase {
 	PICKPOCKET,
 	THUG,
@@ -61,7 +63,7 @@ var _resources: Dictionary = {
 	"gold": 0,
 	"food": 0,
 }
-var _crew_roster: Array = []
+var _crew_roster: Array[CrewMember] = []
 var _loyalty: float = 100.0
 var _phase: int = Phase.PICKPOCKET
 var _last_save_unix: int = 0
@@ -229,13 +231,65 @@ func set_loyalty(new_loyalty: float) -> void:
 
 
 func set_crew_roster(roster: Array) -> void:
-	_crew_roster = roster.duplicate(true)
+	_crew_roster.clear()
+	for crew_member_data: Variant in roster:
+		var crew_member: CrewMember = _coerce_crew_member(crew_member_data)
+		if crew_member == null:
+			continue
+		_crew_roster.append(crew_member)
 	_mark_active()
 	_evaluate_phase_unlocks(&"GameState.set_crew_roster")
 
 
 func get_crew_roster() -> Array:
-	return _crew_roster.duplicate(true)
+	return _crew_roster.duplicate()
+
+
+func add_crew_member(crew_member_data: Variant) -> bool:
+	var crew_member: CrewMember = _coerce_crew_member(crew_member_data)
+	if crew_member == null:
+		return false
+	if _find_crew_member_index_by_id(crew_member.id) != -1:
+		return false
+	_crew_roster.append(crew_member)
+	_mark_active()
+	_evaluate_phase_unlocks(&"GameState.add_crew_member")
+	return true
+
+
+func remove_crew_member_by_id(crew_member_id: String) -> bool:
+	var crew_member_index: int = _find_crew_member_index_by_id(crew_member_id)
+	if crew_member_index == -1:
+		return false
+	_crew_roster.remove_at(crew_member_index)
+	_mark_active()
+	_evaluate_phase_unlocks(&"GameState.remove_crew_member")
+	return true
+
+
+func get_crew_member_by_id(crew_member_id: String) -> CrewMember:
+	var crew_member_index: int = _find_crew_member_index_by_id(crew_member_id)
+	if crew_member_index == -1:
+		return null
+	return _crew_roster[crew_member_index]
+
+
+func get_idle_crew() -> Array[CrewMember]:
+	var idle_crew: Array[CrewMember] = []
+	for crew_member: CrewMember in _crew_roster:
+		if crew_member.is_assigned():
+			continue
+		idle_crew.append(crew_member)
+	return idle_crew
+
+
+func get_assigned_crew() -> Array[CrewMember]:
+	var assigned_crew: Array[CrewMember] = []
+	for crew_member: CrewMember in _crew_roster:
+		if not crew_member.is_assigned():
+			continue
+		assigned_crew.append(crew_member)
+	return assigned_crew
 
 
 func save_state() -> bool:
@@ -268,7 +322,7 @@ func load_state() -> void:
 func _build_save_state() -> Dictionary:
 	return {
 		"resources": _resources.duplicate(true),
-		"crew_roster": _crew_roster.duplicate(true),
+		"crew_roster": _serialize_crew_roster(),
 		"current_phase": _phase,
 		"last_save_unix": _last_save_unix,
 		"last_active_unix": _last_active_unix,
@@ -292,7 +346,7 @@ func _apply_loaded_state(state: Dictionary) -> void:
 		_resources[key] = new_value
 		EventBus.resource_changed.emit(key, old_value, new_value, &"SaveManager.load_game")
 
-	_crew_roster = (state.get("crew_roster", []) as Array).duplicate(true)
+	set_crew_roster(state.get("crew_roster", []) as Array)
 	set_phase(int(state.get("current_phase", _phase)), &"SaveManager.load_game")
 	_last_save_unix = int(state.get("last_save_unix", 0))
 	_last_active_unix = int(state.get("last_active_unix", 0))
@@ -515,6 +569,28 @@ func _meets_unlock_conditions(phase: int) -> bool:
 			return get_resource(&"gold") >= PIRATE_KING_UNLOCK_GOLD and _crew_roster.size() >= PIRATE_KING_UNLOCK_CREW and _loyalty >= PIRATE_KING_UNLOCK_LOYALTY
 		_:
 			return false
+
+
+func _serialize_crew_roster() -> Array:
+	var serialized_roster: Array = []
+	for crew_member: CrewMember in _crew_roster:
+		serialized_roster.append(crew_member.to_dict())
+	return serialized_roster
+
+
+func _coerce_crew_member(crew_member_data: Variant) -> CrewMember:
+	if crew_member_data is CrewMember:
+		return crew_member_data as CrewMember
+	if typeof(crew_member_data) == TYPE_DICTIONARY:
+		return CrewMember.from_dict(crew_member_data)
+	return null
+
+
+func _find_crew_member_index_by_id(crew_member_id: String) -> int:
+	for idx: int in range(_crew_roster.size()):
+		if _crew_roster[idx].id == crew_member_id:
+			return idx
+	return -1
 
 
 func _phase_name_from_value(phase: int) -> String:
