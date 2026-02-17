@@ -9,6 +9,8 @@ enum Phase {
 }
 
 const MUTINY_THRESHOLD: float = 25.0
+const DEBUG_BUILD_FEATURE: StringName = &"debug"
+const DEBUG_COMMAND_SOURCE: StringName = &"DebugCommand"
 
 @export var save_manager_path: NodePath = NodePath("/root/SaveManager")
 @export var time_manager_path: NodePath = NodePath("/root/TimeManager")
@@ -39,6 +41,28 @@ func _notification(what: int) -> void:
 		NOTIFICATION_WM_CLOSE_REQUEST:
 			_persist_on_quit()
 
+
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _is_debug_commands_enabled():
+		return
+	if not (event is InputEventKey):
+		return
+	var key_event: InputEventKey = event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return
+
+	match key_event.keycode:
+		KEY_F6:
+			execute_debug_command("add_resource gold 100")
+			get_viewport().set_input_as_handled()
+		KEY_F7:
+			execute_debug_command("set_resource food 50")
+			get_viewport().set_input_as_handled()
+		KEY_F8:
+			execute_debug_command("set_phase captain")
+			get_viewport().set_input_as_handled()
 
 func get_phase() -> int:
 	return _phase
@@ -138,6 +162,150 @@ func _apply_loaded_state(state: Dictionary) -> void:
 	set_phase(int(state.get("current_phase", _phase)), &"SaveManager.load_game")
 	_last_save_unix = int(state.get("last_save_unix", 0))
 	_last_active_unix = int(state.get("last_active_unix", 0))
+
+
+func execute_debug_command(raw_command: String) -> bool:
+	if not _is_debug_commands_enabled():
+		_emit_debug_feedback(false, raw_command, "Debug commands are disabled in this build.")
+		return false
+
+	var trimmed_command: String = raw_command.strip_edges()
+	if trimmed_command.is_empty():
+		_emit_debug_feedback(false, raw_command, "Command cannot be empty.")
+		return false
+
+	var command_parts: PackedStringArray = trimmed_command.split(" ", false)
+	if command_parts.is_empty():
+		_emit_debug_feedback(false, raw_command, "Command cannot be empty.")
+		return false
+
+	var command_name: String = command_parts[0].to_lower()
+	match command_name:
+		"set_resource":
+			return _execute_set_resource_command(command_parts, trimmed_command)
+		"add_resource":
+			return _execute_add_resource_command(command_parts, trimmed_command)
+		"set_phase":
+			return _execute_set_phase_command(command_parts, trimmed_command)
+		_:
+			_emit_debug_feedback(false, trimmed_command, "Unknown debug command '%s'." % command_name)
+			return false
+
+
+func get_debug_command_help_lines() -> PackedStringArray:
+	return PackedStringArray([
+		"set_resource <type> <amount> (amount must be >= 0)",
+		"add_resource <type> <amount>",
+		"set_phase <phase_name>",
+		"Valid resource keys: %s" % ", ".join(_get_valid_resource_names()),
+		"Valid phase names: %s" % ", ".join(_get_valid_phase_names()),
+	])
+
+
+func _execute_set_resource_command(command_parts: PackedStringArray, raw_command: String) -> bool:
+	if command_parts.size() != 3:
+		_emit_debug_feedback(false, raw_command, "Usage: set_resource <type> <amount>")
+		return false
+
+	var resource_name: StringName = StringName(command_parts[1].to_lower())
+	if not _resources.has(resource_name):
+		_emit_debug_feedback(false, raw_command, "Invalid resource key '%s'. Valid keys: %s" % [command_parts[1], ", ".join(_get_valid_resource_names())])
+		return false
+
+	if not command_parts[2].is_valid_int():
+		_emit_debug_feedback(false, raw_command, "Amount must be a whole number.")
+		return false
+
+	var amount: int = int(command_parts[2])
+	if amount < 0:
+		_emit_debug_feedback(false, raw_command, "Amount cannot be negative for set_resource.")
+		return false
+
+	set_resource(resource_name, amount, DEBUG_COMMAND_SOURCE)
+	_emit_debug_feedback(true, raw_command, "Set %s to %d." % [String(resource_name), amount])
+	return true
+
+
+func _execute_add_resource_command(command_parts: PackedStringArray, raw_command: String) -> bool:
+	if command_parts.size() != 3:
+		_emit_debug_feedback(false, raw_command, "Usage: add_resource <type> <amount>")
+		return false
+
+	var resource_name: StringName = StringName(command_parts[1].to_lower())
+	if not _resources.has(resource_name):
+		_emit_debug_feedback(false, raw_command, "Invalid resource key '%s'. Valid keys: %s" % [command_parts[1], ", ".join(_get_valid_resource_names())])
+		return false
+
+	if not command_parts[2].is_valid_int():
+		_emit_debug_feedback(false, raw_command, "Amount must be a whole number.")
+		return false
+
+	var amount: int = int(command_parts[2])
+	if amount < 0:
+		_emit_debug_feedback(false, raw_command, "Amount cannot be negative for add_resource.")
+		return false
+
+	add_resource(resource_name, amount, DEBUG_COMMAND_SOURCE)
+	_emit_debug_feedback(true, raw_command, "Added %d %s." % [amount, String(resource_name)])
+	return true
+
+
+func _execute_set_phase_command(command_parts: PackedStringArray, raw_command: String) -> bool:
+	if command_parts.size() != 2:
+		_emit_debug_feedback(false, raw_command, "Usage: set_phase <phase_name>")
+		return false
+
+	var phase_name: String = command_parts[1].to_lower()
+	if not _is_valid_phase_name(phase_name):
+		_emit_debug_feedback(false, raw_command, "Unknown phase name '%s'. Valid names: %s" % [command_parts[1], ", ".join(_get_valid_phase_names())])
+		return false
+
+	var phase_value: int = _phase_value_from_name(phase_name)
+	set_phase(phase_value, DEBUG_COMMAND_SOURCE)
+	_emit_debug_feedback(true, raw_command, "Set phase to %s." % phase_name)
+	return true
+
+
+func _phase_value_from_name(phase_name: String) -> int:
+	match phase_name:
+		"pickpocket":
+			return Phase.PICKPOCKET
+		"thug":
+			return Phase.THUG
+		"captain":
+			return Phase.CAPTAIN
+		"pirate_king":
+			return Phase.PIRATE_KING
+		_:
+			return -1
+
+
+func _is_valid_phase_name(phase_name: String) -> bool:
+	return _phase_value_from_name(phase_name) >= 0
+
+
+func _get_valid_phase_names() -> PackedStringArray:
+	return PackedStringArray(["pickpocket", "thug", "captain", "pirate_king"])
+
+
+func _get_valid_resource_names() -> PackedStringArray:
+	var keys: PackedStringArray = PackedStringArray()
+	for resource_key: Variant in _resources.keys():
+		keys.append(String(resource_key))
+	keys.sort()
+	return keys
+
+
+func _is_debug_commands_enabled() -> bool:
+	return OS.has_feature(DEBUG_BUILD_FEATURE)
+
+
+func _emit_debug_feedback(success: bool, command: String, message: String) -> void:
+	EventBus.debug_command_feedback.emit(success, command, message)
+	if success:
+		print("[DebugCommand] %s" % message)
+		return
+	push_warning("[DebugCommand] %s" % message)
 
 
 func _get_save_manager() -> SaveManager:

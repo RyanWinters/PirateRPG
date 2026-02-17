@@ -10,8 +10,11 @@ class_name EventBus
 #   Broadcast when loyalty trends indicate mutiny risk.
 # - offline_progress_ready(elapsed_seconds)
 #   Broadcast after offline progress elapsed time is computed and clamped.
+# - debug_command_feedback(success, command, message)
+#   Broadcast after a debug command attempt so tools can show output.
 
 signal resource_changed(resource_name: StringName, old_value: int, new_value: int, source: StringName)
 signal phase_changed(old_phase: int, new_phase: int, reason: StringName)
 signal mutiny_warning(current_loyalty: float, threshold: float, eta_seconds: float)
 signal offline_progress_ready(elapsed_seconds: int)
+signal debug_command_feedback(success: bool, command: String, message: String)
