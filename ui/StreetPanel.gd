@@ -29,6 +29,9 @@ func _ready() -> void:
 	_event_bus.pickpocket_upgrade_unlocked.connect(_on_pickpocket_upgrade_unlocked)
 	_event_bus.pickpocket_crew_slot_unlocked.connect(_on_pickpocket_crew_slot_unlocked)
 	_event_bus.street_event_triggered.connect(_on_street_event_triggered)
+	_event_bus.expedition_started.connect(_on_expedition_started)
+	_event_bus.expedition_completed.connect(_on_expedition_completed)
+	_event_bus.expedition_claimed.connect(_on_expedition_claimed)
 
 	_refresh_all_ui()
 	set_process(true)
@@ -138,4 +141,18 @@ func _on_street_event_triggered(event_id: StringName, payload: Dictionary) -> vo
 		_:
 			_feedback_message = "Street event: %s" % String(event_id)
 
+	_refresh_resource_and_progression_labels()
+
+func _on_expedition_started(_expedition_id: StringName, template_key: StringName, crew_ids: PackedStringArray, _start_unix: int, _eta_unix: int) -> void:
+	_feedback_message = "Expedition %s departed with %d crew" % [String(template_key), crew_ids.size()]
+	_refresh_resource_and_progression_labels()
+
+
+func _on_expedition_completed(_expedition_id: StringName, template_key: StringName, _completed_unix: int, _rewards: Dictionary) -> void:
+	_feedback_message = "Expedition %s returned. Rewards are claimable." % String(template_key)
+	_refresh_resource_and_progression_labels()
+
+
+func _on_expedition_claimed(_expedition_id: StringName, template_key: StringName, rewards: Dictionary) -> void:
+	_feedback_message = "Claimed %s rewards: %s" % [String(template_key), str(rewards)]
 	_refresh_resource_and_progression_labels()

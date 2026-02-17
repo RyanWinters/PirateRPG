@@ -3,6 +3,7 @@ class_name GameState
 
 const CrewMember = preload("res://systems/CrewMember.gd")
 const ExpeditionTemplates = preload("res://systems/ExpeditionTemplates.gd")
+const ExpeditionSystem = preload("res://systems/ExpeditionSystem.gd")
 
 enum Phase {
 	PICKPOCKET,
@@ -77,6 +78,7 @@ var _unlocked_upgrades: Array[StringName] = []
 var _crew_slots_unlocked: int = 0
 var _street_events: StreetEvents = StreetEvents.new()
 var _expedition_templates: ExpeditionTemplates = ExpeditionTemplates.new()
+var _expedition_system: ExpeditionSystem = ExpeditionSystem.new()
 var _street_event_action_counter: int = 0
 
 
@@ -84,6 +86,12 @@ func _ready() -> void:
 	EventBus.resource_changed.connect(_on_resource_changed)
 	EventBus.phase_changed.connect(_on_phase_changed)
 	EventBus.offline_progress_ready.connect(_on_offline_progress_ready)
+	EventBus.expedition_completed.connect(_on_expedition_completed)
+	EventBus.expedition_claimed.connect(_on_expedition_claimed)
+	_expedition_system.configure(EventBus)
+	var time_manager: TimeManager = _get_time_manager()
+	if time_manager != null:
+		time_manager.second_tick.connect(_on_time_manager_second_tick)
 	_street_events.set_rng_seed(Time.get_unix_time_from_system())
 	set_process(true)
 
@@ -320,6 +328,43 @@ func get_assigned_crew() -> Array[CrewMember]:
 	return assigned_crew
 
 
+func start_expedition(template_key: StringName, crew_ids: PackedStringArray) -> Dictionary:
+	if crew_ids.is_empty():
+		return {}
+	var template: Dictionary = get_expedition_template(template_key)
+	if template.is_empty():
+		return {}
+	if not _expedition_templates.is_template_unlocked(template, _build_expedition_progression_state()):
+		return {}
+	if not _validate_expedition_crew_assignment(crew_ids):
+		return {}
+
+	var now_unix: int = Time.get_unix_time_from_system()
+	var base_duration_seconds: int = maxi(1, int(template.get("base_duration_seconds", 60)))
+	var eta_unix: int = now_unix + base_duration_seconds
+	var expedition_runtime: Dictionary = _expedition_system.start_expedition(template_key, crew_ids, now_unix, eta_unix)
+	if expedition_runtime.is_empty():
+		return {}
+	_assign_crew_to_expedition(crew_ids, String(expedition_runtime.get("expedition_id", "")))
+	_mark_active()
+	return expedition_runtime
+
+
+func get_active_expeditions() -> Array[Dictionary]:
+	return _expedition_system.get_active_expeditions()
+
+
+func get_claimable_expeditions() -> Array[Dictionary]:
+	return _expedition_system.get_claimable_expeditions()
+
+
+func claim_expedition(expedition_id: StringName) -> Dictionary:
+	var claimed_payload: Dictionary = _expedition_system.claim_expedition(expedition_id)
+	if claimed_payload.is_empty():
+		return {}
+	return claimed_payload
+
+
 func save_state() -> bool:
 	var save_manager: SaveManager = _get_save_manager()
 	if save_manager == null:
@@ -345,6 +390,7 @@ func load_state() -> void:
 	var time_manager: TimeManager = _get_time_manager()
 	if time_manager != null:
 		time_manager.begin_offline_cycle_from_save_data(loaded_state)
+	_expedition_system.process_time_tick(Time.get_unix_time_from_system(), Callable(self, "_resolve_expedition_rewards_for_runtime"))
 
 
 func _build_save_state() -> Dictionary:
@@ -360,6 +406,7 @@ func _build_save_state() -> Dictionary:
 		"pickpocket_xp": _pickpocket_xp,
 		"unlocked_upgrades": _unlocked_upgrades.duplicate(),
 		"crew_slots_unlocked": _crew_slots_unlocked,
+		"expedition_runtime": _expedition_system.serialize_state(),
 	}
 
 
@@ -386,6 +433,7 @@ func _apply_loaded_state(state: Dictionary) -> void:
 		_pickpocket_xp = _get_pickpocket_level_xp_threshold(_pickpocket_level)
 	_unlocked_upgrades = _normalize_unlocked_upgrades(state.get("unlocked_upgrades", _unlocked_upgrades))
 	_crew_slots_unlocked = maxi(0, int(state.get("crew_slots_unlocked", _crew_slots_unlocked)))
+	_expedition_system.restore_state(state.get("expedition_runtime", {}) as Dictionary)
 	_reconcile_pickpocket_progression(false, &"SaveManager.load_game")
 
 
@@ -723,6 +771,55 @@ func _process_resume_cycle() -> void:
 		return
 	time_manager.begin_offline_cycle(_last_active_unix)
 
+
+func _validate_expedition_crew_assignment(crew_ids: PackedStringArray) -> bool:
+	for crew_id: String in crew_ids:
+		var crew_member: CrewMember = get_crew_member_by_id(crew_id)
+		if crew_member == null:
+			return false
+		if crew_member.is_assigned():
+			return false
+	return true
+
+
+func _assign_crew_to_expedition(crew_ids: PackedStringArray, expedition_id: String) -> void:
+	for crew_id: String in crew_ids:
+		var crew_member: CrewMember = get_crew_member_by_id(crew_id)
+		if crew_member == null:
+			continue
+		crew_member.set_assignment("expedition:%s" % expedition_id)
+
+
+func _set_crew_idle(crew_ids: PackedStringArray) -> void:
+	for crew_id: String in crew_ids:
+		var crew_member: CrewMember = get_crew_member_by_id(crew_id)
+		if crew_member == null:
+			continue
+		crew_member.set_assignment("")
+
+
+func _on_time_manager_second_tick(now_unix: int) -> void:
+	_expedition_system.process_time_tick(now_unix, Callable(self, "_resolve_expedition_rewards_for_runtime"))
+
+
+func _resolve_expedition_rewards_for_runtime(template_key: StringName) -> Dictionary:
+	var risk_outcome: Dictionary = resolve_expedition_risk(template_key)
+	return resolve_expedition_rewards(template_key, risk_outcome)
+
+
+func _on_expedition_completed(expedition_id: StringName, _template_key: StringName, _completed_unix: int, _rewards: Dictionary) -> void:
+	for expedition_payload: Dictionary in _expedition_system.get_claimable_expeditions():
+		if StringName(str(expedition_payload.get("expedition_id", ""))) != expedition_id:
+			continue
+		_set_crew_idle(expedition_payload.get("crew_ids", PackedStringArray()) as PackedStringArray)
+		_mark_active()
+		return
+
+
+func _on_expedition_claimed(_expedition_id: StringName, _template_key: StringName, rewards: Dictionary) -> void:
+	for resource_name_variant: Variant in rewards.keys():
+		add_resource(StringName(str(resource_name_variant)), int(rewards[resource_name_variant]), &"GameState.expedition_claim")
+	_mark_active()
 
 
 func _on_resource_changed(resource_name: StringName, _old_value: int, new_value: int, source: StringName) -> void:

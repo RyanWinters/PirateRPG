@@ -46,6 +46,10 @@ const DEFAULT_SAVE_STATE := {
 	"pickpocket_xp": 0,
 	"unlocked_upgrades": [],
 	"crew_slots_unlocked": 0,
+	"expedition_runtime": {
+		"runtime_counter": 0,
+		"active_expeditions": {},
+	},
 }
 
 
@@ -165,6 +169,15 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 				continue
 			normalized_upgrades.append(normalized_upgrade_id)
 		normalized["unlocked_upgrades"] = normalized_upgrades
+
+
+	var incoming_expedition_runtime: Variant = payload.get("expedition_runtime", normalized["expedition_runtime"])
+	if typeof(incoming_expedition_runtime) == TYPE_DICTIONARY:
+		var runtime_payload: Dictionary = incoming_expedition_runtime as Dictionary
+		normalized["expedition_runtime"]["runtime_counter"] = maxi(0, int(runtime_payload.get("runtime_counter", 0)))
+		var runtime_expeditions: Variant = runtime_payload.get("active_expeditions", {})
+		if typeof(runtime_expeditions) == TYPE_DICTIONARY:
+			normalized["expedition_runtime"]["active_expeditions"] = (runtime_expeditions as Dictionary).duplicate(true)
 
 	normalized["save_version"] = SAVE_VERSION
 

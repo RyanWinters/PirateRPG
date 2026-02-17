@@ -1,6 +1,8 @@
 extends Node
 class_name TimeManager
 
+signal second_tick(now_unix: int)
+
 const BASE_OFFLINE_TICK_SECONDS: int = 10
 const DEFAULT_MAX_OFFLINE_SECONDS: int = 60 * 60 * 8
 
@@ -9,6 +11,20 @@ const DEFAULT_MAX_OFFLINE_SECONDS: int = 60 * 60 * 8
 
 var _last_emitted_elapsed_seconds: int = 0
 var _cycle_emitted: bool = false
+var _tick_accumulator: float = 0.0
+
+
+func _ready() -> void:
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	_tick_accumulator += delta
+	while _tick_accumulator >= 1.0:
+		_tick_accumulator -= 1.0
+		second_tick.emit(Time.get_unix_time_from_system())
 
 
 func begin_offline_cycle_from_save_data(save_data: Dictionary, now_unix: int = Time.get_unix_time_from_system()) -> int:
