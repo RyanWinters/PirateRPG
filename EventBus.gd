@@ -24,6 +24,12 @@ class_name EventBus
 #   Broadcast when progression unlocks additional crew slots.
 # - street_event_triggered(event_id, payload)
 #   Broadcast when the street-event subsystem triggers an event outcome.
+# - expedition_started(expedition_id, template_key, crew_ids, start_unix, eta_unix)
+#   Broadcast when an expedition transitions from assigned crew into an active timer.
+# - expedition_completed(expedition_id, template_key, completed_unix, rewards)
+#   Broadcast when an active expedition timer resolves and rewards become claimable.
+# - expedition_claimed(expedition_id, template_key, rewards)
+#   Broadcast when claimable expedition rewards are explicitly claimed into resources.
 
 signal resource_changed(resource_name: StringName, old_value: int, new_value: int, source: StringName)
 signal phase_changed(old_phase: int, new_phase: int, reason: StringName)
@@ -36,3 +42,6 @@ signal pickpocket_level_up(previous_level: int, new_level: int, total_xp: int)
 signal pickpocket_upgrade_unlocked(upgrade_id: StringName, unlocked_at_level: int)
 signal pickpocket_crew_slot_unlocked(total_slots: int, unlocked_at_level: int)
 signal street_event_triggered(event_id: StringName, payload: Dictionary)
+signal expedition_started(expedition_id: StringName, template_key: StringName, crew_ids: PackedStringArray, start_unix: int, eta_unix: int)
+signal expedition_completed(expedition_id: StringName, template_key: StringName, completed_unix: int, rewards: Dictionary)
+signal expedition_claimed(expedition_id: StringName, template_key: StringName, rewards: Dictionary)
