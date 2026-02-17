@@ -89,6 +89,7 @@ func _ready() -> void:
 	EventBus.expedition_completed.connect(_on_expedition_completed)
 	EventBus.expedition_claimed.connect(_on_expedition_claimed)
 	_expedition_system.configure(EventBus)
+	load_state()
 	var time_manager: TimeManager = _get_time_manager()
 	if time_manager != null:
 		time_manager.second_tick.connect(_on_time_manager_second_tick)

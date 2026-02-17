@@ -32,10 +32,9 @@ func main() {
 		showError(fmt.Sprintf("Unable to locate launcher executable: %v", err))
 		return
 	}
-	projectRoot := filepath.Dir(exePath)
-
-	if _, err := os.Stat(filepath.Join(projectRoot, "project.godot")); err != nil {
-		showError("project.godot was not found next to this launcher. Keep RunPirateRPG.exe in the root of the PirateRPG folder.")
+	projectRoot, err := resolveProjectRoot(exePath)
+	if err != nil {
+		showError(err.Error())
 		return
 	}
 
@@ -51,6 +50,22 @@ func main() {
 		showError(fmt.Sprintf("Failed to start Godot: %v", err))
 		return
 	}
+}
+
+func resolveProjectRoot(exePath string) (string, error) {
+	candidates := []string{filepath.Dir(exePath)}
+	parentDir := filepath.Dir(filepath.Dir(exePath))
+	if parentDir != candidates[0] {
+		candidates = append(candidates, parentDir)
+	}
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(filepath.Join(candidate, "project.godot")); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", errors.New("project.godot was not found near this launcher. Place RunPirateRPG.exe in the PirateRPG root or in PirateRPG\\dist")
 }
 
 func ensureGodot(godotExePath string) error {
