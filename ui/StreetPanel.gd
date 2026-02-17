@@ -28,6 +28,7 @@ func _ready() -> void:
 	_event_bus.pickpocket_level_up.connect(_on_pickpocket_level_up)
 	_event_bus.pickpocket_upgrade_unlocked.connect(_on_pickpocket_upgrade_unlocked)
 	_event_bus.pickpocket_crew_slot_unlocked.connect(_on_pickpocket_crew_slot_unlocked)
+	_event_bus.street_event_triggered.connect(_on_street_event_triggered)
 
 	_refresh_all_ui()
 	set_process(true)
@@ -116,4 +117,25 @@ func _on_pickpocket_upgrade_unlocked(_upgrade_id: StringName, _unlocked_at_level
 
 
 func _on_pickpocket_crew_slot_unlocked(_total_slots: int, _unlocked_at_level: int) -> void:
+	_refresh_resource_and_progression_labels()
+
+
+func _on_street_event_triggered(event_id: StringName, payload: Dictionary) -> void:
+	match event_id:
+		&"guard_patrol":
+			var guard_loss: int = absi(int(payload.get("gold_delta", 0)))
+			_feedback_message = "Guard patrol! Lost %d gold" % guard_loss
+		&"lucky_mark":
+			var lucky_gain: int = maxi(0, int(payload.get("gold_delta", 0)))
+			_feedback_message = "Lucky mark! +%d bonus gold" % lucky_gain
+		&"rival_thief":
+			var outcome: String = String(payload.get("outcome", "loss"))
+			var rival_delta: int = int(payload.get("gold_delta", 0))
+			if outcome == "win":
+				_feedback_message = "Rival thief outplayed! +%d gold" % maxi(0, rival_delta)
+			else:
+				_feedback_message = "Rival thief stole your haul! %d gold lost" % absi(rival_delta)
+		_:
+			_feedback_message = "Street event: %s" % String(event_id)
+
 	_refresh_resource_and_progression_labels()

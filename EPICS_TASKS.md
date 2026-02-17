@@ -14,7 +14,7 @@ Use this document as the single source of truth for planning and implementation 
 - [x] **Task 2.2**: Add passive income tick system (baseline street hustle generation).
 - [x] **Task 2.3**: Define level curve and unlock rules for upgrades and first crew slot.
 - [x] **Task 2.4**: Build `StreetPanel` UI with click button, gain feedback, and progression hints.
-- [ ] **Task 2.5**: Add random street events (guard patrol, lucky mark, rival thief) using weighted outcomes.
+- [x] **Task 2.5**: Add random street events (guard patrol, lucky mark, rival thief) using weighted outcomes.
 
 ## Epic 3: Idle Crew Expeditions (Mid-Game Automation)
 - [ ] **Task 3.1**: Create `CrewMember` data model (combat, stealth, loyalty, upkeep).
