@@ -12,6 +12,8 @@ class_name SaveManager
 const SAVE_PATH := "user://savegame.json"
 const SAVE_VERSION := 1
 
+@export var debug_logging_enabled: bool = false
+
 const DEFAULT_CREW_MEMBER := {
 	"id": "",
 	"name": "",
@@ -40,20 +42,21 @@ func get_default_state() -> Dictionary:
 
 
 func save_game(state: Dictionary) -> bool:
-	var now_unix: int = Time.get_unix_time_from_system()
+	return _save_game_with_reason(state, &"manual_save")
+
+
+func save_on_quit(state: Dictionary) -> bool:
+	return _save_game_with_reason(state, &"app_quit")
+
+
+func save_on_background(state: Dictionary) -> bool:
+	return _save_game_with_reason(state, &"app_background")
+
+
+func touch_last_active_unix(state: Dictionary, now_unix: int = Time.get_unix_time_from_system()) -> Dictionary:
 	var normalized_state: Dictionary = _normalize_state(state)
-	normalized_state["save_version"] = SAVE_VERSION
-	normalized_state["last_save_unix"] = now_unix
-	if int(normalized_state.get("last_active_unix", 0)) <= 0:
-		normalized_state["last_active_unix"] = now_unix
-
-	var save_file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if save_file == null:
-		push_error("Unable to open save file for write: %s" % SAVE_PATH)
-		return false
-
-	save_file.store_string(JSON.stringify(normalized_state))
-	return true
+	normalized_state["last_active_unix"] = maxi(0, now_unix)
+	return normalized_state
 
 
 func load_game() -> Dictionary:
@@ -75,6 +78,23 @@ func load_game() -> Dictionary:
 	var payload: Dictionary = parsed
 	var migrated: Dictionary = _migrate_save_payload(payload)
 	return _normalize_state(migrated)
+
+
+func _save_game_with_reason(state: Dictionary, reason: StringName) -> bool:
+	var now_unix: int = Time.get_unix_time_from_system()
+	var normalized_state: Dictionary = _normalize_state(state)
+	normalized_state["save_version"] = SAVE_VERSION
+	normalized_state["last_save_unix"] = now_unix
+	normalized_state["last_active_unix"] = now_unix
+
+	var save_file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if save_file == null:
+		push_error("Unable to open save file for write: %s" % SAVE_PATH)
+		return false
+
+	save_file.store_string(JSON.stringify(normalized_state))
+	_debug_log("Saved game (%s) with last_active_unix=%d." % [String(reason), now_unix])
+	return true
 
 
 func _migrate_save_payload(payload: Dictionary) -> Dictionary:
@@ -124,3 +144,9 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 	normalized["save_version"] = SAVE_VERSION
 
 	return normalized
+
+
+func _debug_log(message: String) -> void:
+	if not debug_logging_enabled:
+		return
+	print("[SaveManager] %s" % message)
