@@ -10,9 +10,9 @@ Use this document as the single source of truth for planning and implementation 
 - [x] **Task 1.5**: Add debug/developer commands for quickly setting resources and phase during iteration.
 
 ## Epic 2: Pickpocket Clicker Loop (Early Game Retention)
-- [ ] **Task 2.1**: Implement click action (`steal_click`) with scaling formula and anti-spam guard.
-- [ ] **Task 2.2**: Add passive income tick system (baseline street hustle generation).
-- [ ] **Task 2.3**: Define level curve and unlock rules for upgrades and first crew slot.
+- [x] **Task 2.1**: Implement click action (`steal_click`) with scaling formula and anti-spam guard.
+- [x] **Task 2.2**: Add passive income tick system (baseline street hustle generation).
+- [x] **Task 2.3**: Define level curve and unlock rules for upgrades and first crew slot.
 - [ ] **Task 2.4**: Build `StreetPanel` UI with click button, gain feedback, and progression hints.
 - [ ] **Task 2.5**: Add random street events (guard patrol, lucky mark, rival thief) using weighted outcomes.
 

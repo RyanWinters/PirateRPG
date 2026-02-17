@@ -19,6 +19,17 @@ const PIRATE_KING_UNLOCK_GOLD: int = 2500
 const PIRATE_KING_UNLOCK_CREW: int = 8
 const PIRATE_KING_UNLOCK_LOYALTY: float = 70.0
 
+const STEAL_CLICK_BASE_GOLD: int = 2
+const STEAL_CLICK_PHASE_MULTIPLIER: float = 0.45
+const STEAL_CLICK_COOLDOWN_MSEC: int = 225
+const PASSIVE_TICK_INTERVAL_SECONDS: float = 1.0
+
+const STREET_XP_PER_GOLD: float = 1.0
+const STREET_LEVEL_BASE_XP: int = 20
+const STREET_LEVEL_XP_GROWTH: int = 15
+const STREET_UNLOCK_UPGRADES_LEVEL: int = 2
+const STREET_UNLOCK_FIRST_CREW_SLOT_LEVEL: int = 4
+
 @export var save_manager_path: NodePath = NodePath("/root/SaveManager")
 @export var time_manager_path: NodePath = NodePath("/root/TimeManager")
 
@@ -31,12 +42,19 @@ var _loyalty: float = 100.0
 var _phase: int = Phase.PICKPOCKET
 var _last_save_unix: int = 0
 var _last_active_unix: int = 0
+var _last_steal_click_msec: int = -STEAL_CLICK_COOLDOWN_MSEC
+var _passive_tick_accumulator: float = 0.0
+var _street_xp: int = 0
+var _street_level: int = 1
+var _street_upgrades_unlocked: bool = false
+var _first_crew_slot_unlocked: bool = false
 
 
 func _ready() -> void:
 	EventBus.resource_changed.connect(_on_resource_changed)
 	EventBus.phase_changed.connect(_on_phase_changed)
 	EventBus.offline_progress_ready.connect(_on_offline_progress_ready)
+	set_process(true)
 
 
 func _notification(what: int) -> void:
@@ -49,6 +67,34 @@ func _notification(what: int) -> void:
 			_persist_on_quit()
 
 
+func _process(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	_passive_tick_accumulator += delta
+	while _passive_tick_accumulator >= PASSIVE_TICK_INTERVAL_SECONDS:
+		_passive_tick_accumulator -= PASSIVE_TICK_INTERVAL_SECONDS
+		_apply_passive_income_tick()
+
+
+func steal_click() -> bool:
+	var now_msec: int = Time.get_ticks_msec()
+	var elapsed_msec: int = now_msec - _last_steal_click_msec
+	if elapsed_msec < STEAL_CLICK_COOLDOWN_MSEC:
+		var cooldown_remaining_msec: int = STEAL_CLICK_COOLDOWN_MSEC - elapsed_msec
+		EventBus.steal_click_resolved.emit(false, 0, cooldown_remaining_msec)
+		return false
+
+	_last_steal_click_msec = now_msec
+	var gold_gained: int = _calculate_steal_click_gold_gain()
+	add_resource(&"gold", gold_gained, &"GameState.steal_click")
+	_add_street_xp(_xp_gain_from_gold(gold_gained), &"GameState.steal_click")
+	EventBus.steal_click_resolved.emit(true, gold_gained, 0)
+	return true
+
+
+func get_steal_click_cooldown_remaining_msec() -> int:
+	var elapsed_msec: int = Time.get_ticks_msec() - _last_steal_click_msec
+	return maxi(0, STEAL_CLICK_COOLDOWN_MSEC - elapsed_msec)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -69,6 +115,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		KEY_F8:
 			execute_debug_command("set_phase captain")
+			get_viewport().set_input_as_handled()
+		KEY_F9:
+			steal_click()
 			get_viewport().set_input_as_handled()
 
 func get_phase() -> int:
@@ -122,6 +171,26 @@ func get_crew_roster() -> Array:
 	return _crew_roster.duplicate(true)
 
 
+func get_street_level() -> int:
+	return _street_level
+
+
+func get_street_xp() -> int:
+	return _street_xp
+
+
+func is_street_upgrade_unlocked() -> bool:
+	return _street_upgrades_unlocked
+
+
+func is_first_crew_slot_unlocked() -> bool:
+	return _first_crew_slot_unlocked
+
+
+func get_street_next_level_required_xp() -> int:
+	return _xp_required_for_level(_street_level + 1)
+
+
 func save_state() -> bool:
 	var save_manager: SaveManager = _get_save_manager()
 	if save_manager == null:
@@ -156,6 +225,12 @@ func _build_save_state() -> Dictionary:
 		"current_phase": _phase,
 		"last_save_unix": _last_save_unix,
 		"last_active_unix": _last_active_unix,
+		"last_steal_click_msec": _last_steal_click_msec,
+		"passive_tick_accumulator": _passive_tick_accumulator,
+		"street_xp": _street_xp,
+		"street_level": _street_level,
+		"street_upgrades_unlocked": _street_upgrades_unlocked,
+		"first_crew_slot_unlocked": _first_crew_slot_unlocked,
 	}
 
 
@@ -174,6 +249,13 @@ func _apply_loaded_state(state: Dictionary) -> void:
 	set_phase(int(state.get("current_phase", _phase)), &"SaveManager.load_game")
 	_last_save_unix = int(state.get("last_save_unix", 0))
 	_last_active_unix = int(state.get("last_active_unix", 0))
+	_last_steal_click_msec = int(state.get("last_steal_click_msec", _last_steal_click_msec))
+	_passive_tick_accumulator = clampf(float(state.get("passive_tick_accumulator", 0.0)), 0.0, PASSIVE_TICK_INTERVAL_SECONDS)
+	_street_xp = maxi(0, int(state.get("street_xp", _street_xp)))
+	_street_level = maxi(1, int(state.get("street_level", _street_level)))
+	_street_upgrades_unlocked = bool(state.get("street_upgrades_unlocked", _street_upgrades_unlocked))
+	_first_crew_slot_unlocked = bool(state.get("first_crew_slot_unlocked", _first_crew_slot_unlocked))
+	_reconcile_street_progression_from_loaded_state()
 
 
 func execute_debug_command(raw_command: String) -> bool:
@@ -466,6 +548,77 @@ func _on_offline_progress_ready(elapsed_seconds: int) -> void:
 		add_resource(&"gold", offline_gold, &"GameState.offline_progress")
 	if simulated_ticks > 0:
 		add_resource(&"food", simulated_ticks, &"GameState.offline_progress_ticks")
+
+
+func _apply_passive_income_tick() -> void:
+	var passive_gold: int = _calculate_passive_tick_gold_gain()
+	if passive_gold <= 0:
+		return
+	add_resource(&"gold", passive_gold, &"GameState.passive_income")
+	_add_street_xp(_xp_gain_from_gold(passive_gold), &"GameState.passive_income")
+	EventBus.passive_income_tick.emit(passive_gold, PASSIVE_TICK_INTERVAL_SECONDS)
+
+
+func _calculate_steal_click_gold_gain() -> int:
+	var phase_bonus: float = 1.0 + (float(_phase) * STEAL_CLICK_PHASE_MULTIPLIER)
+	var gold: int = maxi(1, int(round(STEAL_CLICK_BASE_GOLD * phase_bonus)))
+	return gold
+
+
+func _calculate_passive_tick_gold_gain() -> int:
+	var gold_per_second: float = _get_gold_income_per_second_for_phase(_phase)
+	return maxi(0, int(round(gold_per_second * PASSIVE_TICK_INTERVAL_SECONDS)))
+
+
+func _xp_gain_from_gold(gold_amount: int) -> int:
+	return maxi(0, int(round(float(gold_amount) * STREET_XP_PER_GOLD)))
+
+
+func _add_street_xp(amount: int, source: StringName) -> void:
+	if amount <= 0:
+		return
+	_street_xp += amount
+	_mark_active()
+	_evaluate_street_level(source)
+
+
+func _evaluate_street_level(source: StringName) -> void:
+	var old_level: int = _street_level
+	while _street_xp >= _xp_required_for_level(_street_level + 1):
+		_street_level += 1
+	if _street_level != old_level:
+		EventBus.street_level_changed.emit(old_level, _street_level, _street_xp, _xp_required_for_level(_street_level + 1))
+	_evaluate_street_unlocks(source)
+
+
+func _evaluate_street_unlocks(source: StringName) -> void:
+	var upgrades_should_unlock: bool = _street_level >= STREET_UNLOCK_UPGRADES_LEVEL
+	if upgrades_should_unlock != _street_upgrades_unlocked:
+		_street_upgrades_unlocked = upgrades_should_unlock
+		EventBus.street_unlock_changed.emit(&"street_upgrades", _street_upgrades_unlocked, source)
+
+	var first_slot_should_unlock: bool = _street_level >= STREET_UNLOCK_FIRST_CREW_SLOT_LEVEL
+	if first_slot_should_unlock != _first_crew_slot_unlocked:
+		_first_crew_slot_unlocked = first_slot_should_unlock
+		EventBus.street_unlock_changed.emit(&"first_crew_slot", _first_crew_slot_unlocked, source)
+
+
+func _xp_required_for_level(level: int) -> int:
+	if level <= 1:
+		return 0
+	var level_index: int = level - 1
+	return int(STREET_LEVEL_BASE_XP * level_index + (STREET_LEVEL_XP_GROWTH * level_index * (level_index - 1)) / 2)
+
+
+func _reconcile_street_progression_from_loaded_state() -> void:
+	var computed_level: int = 1
+	while _street_xp >= _xp_required_for_level(computed_level + 1):
+		computed_level += 1
+	if computed_level != _street_level:
+		var old_level: int = _street_level
+		_street_level = computed_level
+		EventBus.street_level_changed.emit(old_level, _street_level, _street_xp, _xp_required_for_level(_street_level + 1))
+	_evaluate_street_unlocks(&"SaveManager.load_game")
 
 
 func _get_gold_income_per_second_for_phase(phase: int) -> float:

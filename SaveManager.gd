@@ -32,6 +32,12 @@ const DEFAULT_SAVE_STATE := {
 	"current_phase": 0,
 	"last_save_unix": 0,
 	"last_active_unix": 0,
+	"last_steal_click_msec": -225,
+	"passive_tick_accumulator": 0.0,
+	"street_xp": 0,
+	"street_level": 1,
+	"street_upgrades_unlocked": false,
+	"first_crew_slot_unlocked": false,
 }
 
 
@@ -141,6 +147,12 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 	normalized["current_phase"] = maxi(0, int(payload.get("current_phase", normalized["current_phase"])))
 	normalized["last_save_unix"] = maxi(0, int(payload.get("last_save_unix", normalized["last_save_unix"])))
 	normalized["last_active_unix"] = maxi(0, int(payload.get("last_active_unix", normalized["last_active_unix"])))
+	normalized["last_steal_click_msec"] = int(payload.get("last_steal_click_msec", normalized["last_steal_click_msec"]))
+	normalized["passive_tick_accumulator"] = clampf(float(payload.get("passive_tick_accumulator", normalized["passive_tick_accumulator"])), 0.0, 1.0)
+	normalized["street_xp"] = maxi(0, int(payload.get("street_xp", normalized["street_xp"])))
+	normalized["street_level"] = maxi(1, int(payload.get("street_level", normalized["street_level"])))
+	normalized["street_upgrades_unlocked"] = bool(payload.get("street_upgrades_unlocked", normalized["street_upgrades_unlocked"]))
+	normalized["first_crew_slot_unlocked"] = bool(payload.get("first_crew_slot_unlocked", normalized["first_crew_slot_unlocked"]))
 	normalized["save_version"] = SAVE_VERSION
 
 	return normalized
