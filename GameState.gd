@@ -19,6 +19,11 @@ const PIRATE_KING_UNLOCK_GOLD: int = 2500
 const PIRATE_KING_UNLOCK_CREW: int = 8
 const PIRATE_KING_UNLOCK_LOYALTY: float = 70.0
 
+const STEAL_CLICK_BASE_GOLD: int = 2
+const STEAL_CLICK_PHASE_MULTIPLIER: float = 0.45
+const STEAL_CLICK_COOLDOWN_MSEC: int = 225
+const PASSIVE_TICK_INTERVAL_SECONDS: float = 1.0
+
 @export var save_manager_path: NodePath = NodePath("/root/SaveManager")
 @export var time_manager_path: NodePath = NodePath("/root/TimeManager")
 
@@ -31,12 +36,15 @@ var _loyalty: float = 100.0
 var _phase: int = Phase.PICKPOCKET
 var _last_save_unix: int = 0
 var _last_active_unix: int = 0
+var _last_steal_click_msec: int = -STEAL_CLICK_COOLDOWN_MSEC
+var _passive_tick_accumulator: float = 0.0
 
 
 func _ready() -> void:
 	EventBus.resource_changed.connect(_on_resource_changed)
 	EventBus.phase_changed.connect(_on_phase_changed)
 	EventBus.offline_progress_ready.connect(_on_offline_progress_ready)
+	set_process(true)
 
 
 func _notification(what: int) -> void:
@@ -49,6 +57,33 @@ func _notification(what: int) -> void:
 			_persist_on_quit()
 
 
+func _process(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	_passive_tick_accumulator += delta
+	while _passive_tick_accumulator >= PASSIVE_TICK_INTERVAL_SECONDS:
+		_passive_tick_accumulator -= PASSIVE_TICK_INTERVAL_SECONDS
+		_apply_passive_income_tick()
+
+
+func steal_click() -> bool:
+	var now_msec: int = Time.get_ticks_msec()
+	var elapsed_msec: int = now_msec - _last_steal_click_msec
+	if elapsed_msec < STEAL_CLICK_COOLDOWN_MSEC:
+		var cooldown_remaining_msec: int = STEAL_CLICK_COOLDOWN_MSEC - elapsed_msec
+		EventBus.steal_click_resolved.emit(false, 0, cooldown_remaining_msec)
+		return false
+
+	_last_steal_click_msec = now_msec
+	var gold_gained: int = _calculate_steal_click_gold_gain()
+	add_resource(&"gold", gold_gained, &"GameState.steal_click")
+	EventBus.steal_click_resolved.emit(true, gold_gained, 0)
+	return true
+
+
+func get_steal_click_cooldown_remaining_msec() -> int:
+	var elapsed_msec: int = Time.get_ticks_msec() - _last_steal_click_msec
+	return maxi(0, STEAL_CLICK_COOLDOWN_MSEC - elapsed_msec)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -69,6 +104,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		KEY_F8:
 			execute_debug_command("set_phase captain")
+			get_viewport().set_input_as_handled()
+		KEY_F9:
+			steal_click()
 			get_viewport().set_input_as_handled()
 
 func get_phase() -> int:
@@ -156,6 +194,8 @@ func _build_save_state() -> Dictionary:
 		"current_phase": _phase,
 		"last_save_unix": _last_save_unix,
 		"last_active_unix": _last_active_unix,
+		"last_steal_click_msec": _last_steal_click_msec,
+		"passive_tick_accumulator": _passive_tick_accumulator,
 	}
 
 
@@ -174,6 +214,8 @@ func _apply_loaded_state(state: Dictionary) -> void:
 	set_phase(int(state.get("current_phase", _phase)), &"SaveManager.load_game")
 	_last_save_unix = int(state.get("last_save_unix", 0))
 	_last_active_unix = int(state.get("last_active_unix", 0))
+	_last_steal_click_msec = int(state.get("last_steal_click_msec", _last_steal_click_msec))
+	_passive_tick_accumulator = clampf(float(state.get("passive_tick_accumulator", 0.0)), 0.0, PASSIVE_TICK_INTERVAL_SECONDS)
 
 
 func execute_debug_command(raw_command: String) -> bool:
@@ -466,6 +508,25 @@ func _on_offline_progress_ready(elapsed_seconds: int) -> void:
 		add_resource(&"gold", offline_gold, &"GameState.offline_progress")
 	if simulated_ticks > 0:
 		add_resource(&"food", simulated_ticks, &"GameState.offline_progress_ticks")
+
+
+func _apply_passive_income_tick() -> void:
+	var passive_gold: int = _calculate_passive_tick_gold_gain()
+	if passive_gold <= 0:
+		return
+	add_resource(&"gold", passive_gold, &"GameState.passive_income")
+	EventBus.passive_income_tick.emit(passive_gold, PASSIVE_TICK_INTERVAL_SECONDS)
+
+
+func _calculate_steal_click_gold_gain() -> int:
+	var phase_bonus: float = 1.0 + (float(_phase) * STEAL_CLICK_PHASE_MULTIPLIER)
+	var gold: int = maxi(1, int(round(STEAL_CLICK_BASE_GOLD * phase_bonus)))
+	return gold
+
+
+func _calculate_passive_tick_gold_gain() -> int:
+	var gold_per_second: float = _get_gold_income_per_second_for_phase(_phase)
+	return maxi(0, int(round(gold_per_second * PASSIVE_TICK_INTERVAL_SECONDS)))
 
 
 func _get_gold_income_per_second_for_phase(phase: int) -> float:
