@@ -1,8 +1,11 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/StreetPanel.gd" id="1_8s4ft"]
 
-[node name="StreetPanel" type="Control"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.0627451, 0.0823529, 0.117647, 1)
+
+[node name="StreetPanel" type="PanelContainer"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,6 +14,8 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_8s4ft")
 
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -18,9 +23,9 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 24
+theme_override_constants/margin_left = 28
 theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 24
+theme_override_constants/margin_right = 28
 theme_override_constants/margin_bottom = 24
 
 [node name="VBox" type="VBoxContainer" parent="MarginContainer"]
@@ -29,6 +34,8 @@ theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="MarginContainer/VBox"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 30
+theme_override_colors/font_color = Color(0.980392, 0.843137, 0.458824, 1)
 text = "Street Hustle & Expeditions"
 
 [node name="GoldRow" type="HBoxContainer" parent="MarginContainer/VBox"]
@@ -37,11 +44,13 @@ theme_override_constants/separation = 8
 
 [node name="GoldLabel" type="Label" parent="MarginContainer/VBox/GoldRow"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "Gold:"
 
 [node name="GoldValueLabel" type="Label" parent="MarginContainer/VBox/GoldRow"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(0.980392, 0.843137, 0.458824, 1)
 text = "0"
 
 [node name="StealButton" type="Button" parent="MarginContainer/VBox"]
@@ -52,16 +61,19 @@ text = "Steal"
 [node name="FeedbackLabel" type="Label" parent="MarginContainer/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(0.796078, 0.866667, 0.968627, 1)
 text = "Ready to steal."
 autowrap_mode = 3
 
 [node name="ProgressionHintTitle" type="Label" parent="MarginContainer/VBox"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "Progression"
 
 [node name="ProgressionHintLabel" type="Label" parent="MarginContainer/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "..."
 autowrap_mode = 3
 
@@ -70,6 +82,8 @@ layout_mode = 2
 
 [node name="ExpeditionHeader" type="Label" parent="MarginContainer/VBox"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.980392, 0.843137, 0.458824, 1)
 text = "Crew Roster & Expedition Management"
 
 [node name="ExpeditionColumns" type="HBoxContainer" parent="MarginContainer/VBox"]
@@ -84,6 +98,7 @@ theme_override_constants/separation = 8
 
 [node name="IdleCrewTitle" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "Idle Crew"
 
 [node name="IdleCrewList" type="ItemList" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
@@ -100,6 +115,7 @@ theme_override_constants/separation = 8
 
 [node name="TemplateLabel" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn/TemplateRow"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "Template"
 
 [node name="TemplatePicker" type="OptionButton" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn/TemplateRow"]
@@ -119,6 +135,7 @@ scroll_active = false
 [node name="AssignmentHintLabel" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(0.796078, 0.866667, 0.968627, 1)
 text = "Select idle crew and an expedition template."
 autowrap_mode = 3
 
@@ -134,6 +151,7 @@ theme_override_constants/separation = 8
 
 [node name="ActiveTitle" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "Active Expeditions"
 
 [node name="ActiveExpeditionsLabel" type="RichTextLabel" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
@@ -147,6 +165,7 @@ text = "No active expeditions."
 
 [node name="ClaimableTitle" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.823529, 0.858824, 0.92549, 1)
 text = "Completed / Claimable Expeditions"
 
 [node name="ClaimableExpeditionsList" type="ItemList" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
