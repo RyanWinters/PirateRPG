@@ -3,10 +3,10 @@
 Use this document as the single source of truth for planning and implementation order.
 
 ## Epic 1: Core Progression Framework (Phases + Save Foundation)
-- [ ] **Task 1.1**: Create global phase model in `GameState.gd` with enum and unlock conditions (`Pickpocket -> Thug -> Captain -> PirateKing`).
-- [ ] **Task 1.2**: Implement `SaveManager.gd` v1 with serialization for resources, crew, phase, and timestamps.
-- [ ] **Task 1.3**: Build `TimeManager.gd` to calculate offline elapsed time and emit `offline_progress_ready`.
-- [ ] **Task 1.4**: Create `EventBus.gd` signal contract for system decoupling (`resource_changed`, `phase_changed`, `mutiny_warning`, etc.).
+- [x] **Task 1.1**: Create global phase model in `GameState.gd` with enum and unlock conditions (`Pickpocket -> Thug -> Captain -> PirateKing`).
+- [x] **Task 1.2**: Implement `SaveManager.gd` v1 with serialization for resources, crew, phase, and timestamps.
+- [x] **Task 1.3**: Build `TimeManager.gd` to calculate offline elapsed time and emit `offline_progress_ready`.
+- [x] **Task 1.4**: Create `EventBus.gd` signal contract for system decoupling (`resource_changed`, `phase_changed`, `mutiny_warning`, etc.).
 - [x] **Task 1.5**: Add debug/developer commands for quickly setting resources and phase during iteration.
 
 ## Epic 2: Pickpocket Clicker Loop (Early Game Retention)
