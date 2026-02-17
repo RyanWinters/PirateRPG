@@ -11,6 +11,7 @@ enum Phase {
 const MUTINY_THRESHOLD: float = 25.0
 
 @export var save_manager_path: NodePath = NodePath("/root/SaveManager")
+@export var time_manager_path: NodePath = NodePath("/root/TimeManager")
 
 var _resources: Dictionary = {
 	"gold": 0,
@@ -27,6 +28,16 @@ func _ready() -> void:
 	EventBus.resource_changed.connect(_on_resource_changed)
 	EventBus.phase_changed.connect(_on_phase_changed)
 	EventBus.offline_progress_ready.connect(_on_offline_progress_ready)
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED:
+			_persist_on_background()
+		NOTIFICATION_APPLICATION_RESUMED:
+			_process_resume_cycle()
+		NOTIFICATION_WM_CLOSE_REQUEST:
+			_persist_on_quit()
 
 
 func get_phase() -> int:
@@ -80,7 +91,14 @@ func save_state() -> bool:
 	if save_manager == null:
 		push_error("SaveManager not found at path: %s" % save_manager_path)
 		return false
-	return save_manager.save_game(_build_save_state())
+	_mark_active()
+	var save_state: Dictionary = _build_save_state()
+	var was_saved: bool = save_manager.save_game(save_state)
+	if was_saved:
+		var now_unix: int = Time.get_unix_time_from_system()
+		_last_save_unix = now_unix
+		_last_active_unix = now_unix
+	return was_saved
 
 
 func load_state() -> void:
@@ -88,7 +106,11 @@ func load_state() -> void:
 	if save_manager == null:
 		push_error("SaveManager not found at path: %s" % save_manager_path)
 		return
-	_apply_loaded_state(save_manager.load_game())
+	var loaded_state: Dictionary = save_manager.load_game()
+	_apply_loaded_state(loaded_state)
+	var time_manager: TimeManager = _get_time_manager()
+	if time_manager != null:
+		time_manager.begin_offline_cycle_from_save_data(loaded_state)
 
 
 func _build_save_state() -> Dictionary:
@@ -125,8 +147,45 @@ func _get_save_manager() -> SaveManager:
 	return null
 
 
+func _get_time_manager() -> TimeManager:
+	var node: Node = get_node_or_null(time_manager_path)
+	if node is TimeManager:
+		return node as TimeManager
+	return null
+
+
 func _mark_active() -> void:
 	_last_active_unix = Time.get_unix_time_from_system()
+
+
+func _persist_on_background() -> void:
+	var save_manager: SaveManager = _get_save_manager()
+	if save_manager == null:
+		return
+	_mark_active()
+	var now_unix: int = Time.get_unix_time_from_system()
+	var was_saved: bool = save_manager.save_on_background(_build_save_state())
+	if was_saved:
+		_last_save_unix = now_unix
+
+
+func _persist_on_quit() -> void:
+	var save_manager: SaveManager = _get_save_manager()
+	if save_manager == null:
+		return
+	_mark_active()
+	var now_unix: int = Time.get_unix_time_from_system()
+	var was_saved: bool = save_manager.save_on_quit(_build_save_state())
+	if was_saved:
+		_last_save_unix = now_unix
+
+
+func _process_resume_cycle() -> void:
+	var time_manager: TimeManager = _get_time_manager()
+	if time_manager == null:
+		return
+	time_manager.begin_offline_cycle(_last_active_unix)
+
 
 
 func _on_resource_changed(resource_name: StringName, _old_value: int, new_value: int, source: StringName) -> void:
@@ -141,6 +200,28 @@ func _on_phase_changed(_old_phase: int, new_phase: int, reason: StringName) -> v
 	_phase = new_phase
 
 
-func _on_offline_progress_ready(_elapsed_seconds: int, reward_snapshot: Dictionary, _simulated_ticks: int) -> void:
-	for resource_name: StringName in reward_snapshot.keys():
-		add_resource(resource_name, int(reward_snapshot[resource_name]), &"GameState.offline_progress")
+func _on_offline_progress_ready(elapsed_seconds: int) -> void:
+	if elapsed_seconds <= 0:
+		return
+	var time_manager: TimeManager = _get_time_manager()
+	var simulated_ticks: int = 0
+	if time_manager != null:
+		simulated_ticks = time_manager.elapsed_to_ticks(elapsed_seconds)
+	var gold_per_second: float = _get_gold_income_per_second_for_phase(_phase)
+	var offline_gold: int = int(round(elapsed_seconds * gold_per_second))
+	if offline_gold > 0:
+		add_resource(&"gold", offline_gold, &"GameState.offline_progress")
+	if simulated_ticks > 0:
+		add_resource(&"food", simulated_ticks, &"GameState.offline_progress_ticks")
+
+
+func _get_gold_income_per_second_for_phase(phase: int) -> float:
+	match phase:
+		Phase.PICKPOCKET:
+			return 1.0
+		Phase.THUG:
+			return 2.0
+		Phase.CAPTAIN:
+			return 3.0
+		_:
+			return 5.0
