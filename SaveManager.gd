@@ -177,7 +177,25 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 		normalized["expedition_runtime"]["runtime_counter"] = maxi(0, int(runtime_payload.get("runtime_counter", 0)))
 		var runtime_expeditions: Variant = runtime_payload.get("active_expeditions", {})
 		if typeof(runtime_expeditions) == TYPE_DICTIONARY:
-			normalized["expedition_runtime"]["active_expeditions"] = (runtime_expeditions as Dictionary).duplicate(true)
+			var normalized_expeditions: Dictionary = {}
+			for expedition_id_variant: Variant in (runtime_expeditions as Dictionary).keys():
+				var runtime_entry: Variant = (runtime_expeditions as Dictionary)[expedition_id_variant]
+				if typeof(runtime_entry) != TYPE_DICTIONARY:
+					continue
+				var runtime_dict: Dictionary = runtime_entry as Dictionary
+				normalized_expeditions[str(expedition_id_variant)] = {
+					"template_key": str(runtime_dict.get("template_key", "")),
+					"crew_ids": runtime_dict.get("crew_ids", PackedStringArray()),
+					"start_unix": maxi(0, int(runtime_dict.get("start_unix", 0))),
+					"eta_unix": maxi(0, int(runtime_dict.get("eta_unix", 0))),
+					"duration_seconds": maxi(1, int(runtime_dict.get("duration_seconds", 1))),
+					"progress_seconds": maxi(0, int(runtime_dict.get("progress_seconds", 0))),
+					"last_progress_unix": maxi(0, int(runtime_dict.get("last_progress_unix", 0))),
+					"completed_unix": maxi(0, int(runtime_dict.get("completed_unix", 0))),
+					"status": str(runtime_dict.get("status", "active")),
+					"rewards": runtime_dict.get("rewards", {}),
+				}
+			normalized["expedition_runtime"]["active_expeditions"] = normalized_expeditions
 
 	normalized["save_version"] = SAVE_VERSION
 
