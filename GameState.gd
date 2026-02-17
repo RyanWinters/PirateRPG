@@ -23,6 +23,16 @@ const STEAL_CLICK_BASE_GOLD: int = 2
 const STEAL_CLICK_PHASE_MULTIPLIER: float = 0.45
 const STEAL_CLICK_COOLDOWN_MSEC: int = 225
 const PASSIVE_TICK_INTERVAL_SECONDS: float = 1.0
+const STREET_EVENT_TRIGGER_CADENCE_ACTIONS: int = 5
+const STREET_EVENT_TRIGGER_CHANCE_PER_CADENCE: float = 0.35
+const STREET_EVENT_GUARD_PATROL_WEIGHT: float = 1.0
+const STREET_EVENT_LUCKY_MARK_WEIGHT: float = 1.2
+const STREET_EVENT_RIVAL_THIEF_WEIGHT: float = 0.8
+const STREET_EVENT_GUARD_PATROL_GOLD_LOSS: int = 6
+const STREET_EVENT_LUCKY_MARK_GOLD_BONUS: int = 10
+const STREET_EVENT_RIVAL_THIEF_WIN_CHANCE: float = 0.5
+const STREET_EVENT_RIVAL_THIEF_WIN_GOLD_BONUS: int = 12
+const STREET_EVENT_RIVAL_THIEF_LOSS_GOLD_LOSS: int = 8
 
 const PICKPOCKET_MAX_LEVEL: int = 5
 const PICKPOCKET_CLICK_XP_GAIN: int = 1
@@ -62,12 +72,15 @@ var _pickpocket_level: int = 1
 var _pickpocket_xp: int = 0
 var _unlocked_upgrades: Array[StringName] = []
 var _crew_slots_unlocked: int = 0
+var _street_events: StreetEvents = StreetEvents.new()
+var _street_event_action_counter: int = 0
 
 
 func _ready() -> void:
 	EventBus.resource_changed.connect(_on_resource_changed)
 	EventBus.phase_changed.connect(_on_phase_changed)
 	EventBus.offline_progress_ready.connect(_on_offline_progress_ready)
+	_street_events.set_rng_seed(Time.get_unix_time_from_system())
 	set_process(true)
 
 
@@ -103,12 +116,21 @@ func steal_click() -> bool:
 	add_resource(&"gold", gold_gained, &"GameState.steal_click")
 	_apply_pickpocket_progress(PICKPOCKET_CLICK_XP_GAIN, &"GameState.steal_click")
 	EventBus.steal_click_resolved.emit(true, gold_gained, 0)
+	_try_trigger_street_event(&"GameState.steal_click")
 	return true
 
 
 func get_steal_click_cooldown_remaining_msec() -> int:
 	var elapsed_msec: int = Time.get_ticks_msec() - _last_steal_click_msec
 	return maxi(0, STEAL_CLICK_COOLDOWN_MSEC - elapsed_msec)
+
+
+func set_street_event_rng_seed(seed: int) -> void:
+	_street_events.set_rng_seed(seed)
+
+
+func set_street_event_rng_source(rng: RandomNumberGenerator) -> void:
+	_street_events.set_rng_source(rng)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -634,7 +656,80 @@ func _apply_passive_income_tick() -> void:
 	add_resource(&"gold", passive_gold, &"GameState.passive_income")
 	_apply_pickpocket_progress(PICKPOCKET_PASSIVE_TICK_XP_GAIN, &"GameState.passive_income")
 	EventBus.passive_income_tick.emit(passive_gold, PASSIVE_TICK_INTERVAL_SECONDS)
+	_try_trigger_street_event(&"GameState.passive_income")
 
+
+
+
+func _try_trigger_street_event(source: StringName) -> void:
+	_street_event_action_counter += 1
+	if _street_event_action_counter % STREET_EVENT_TRIGGER_CADENCE_ACTIONS != 0:
+		return
+	if not _street_events.roll_chance(STREET_EVENT_TRIGGER_CHANCE_PER_CADENCE):
+		return
+
+	var payload: Dictionary = _street_events.roll_event_payload(_build_street_event_definitions())
+	if payload.is_empty():
+		return
+	_apply_street_event_payload(payload, source)
+
+
+func _build_street_event_definitions() -> Array[Dictionary]:
+	return [
+		{
+			"id": &"guard_patrol",
+			"weight": STREET_EVENT_GUARD_PATROL_WEIGHT,
+			"gold_loss": STREET_EVENT_GUARD_PATROL_GOLD_LOSS,
+		},
+		{
+			"id": &"lucky_mark",
+			"weight": STREET_EVENT_LUCKY_MARK_WEIGHT,
+			"gold_bonus": STREET_EVENT_LUCKY_MARK_GOLD_BONUS,
+		},
+		{
+			"id": &"rival_thief",
+			"weight": STREET_EVENT_RIVAL_THIEF_WEIGHT,
+			"win_chance": STREET_EVENT_RIVAL_THIEF_WIN_CHANCE,
+			"gold_bonus": STREET_EVENT_RIVAL_THIEF_WIN_GOLD_BONUS,
+			"gold_loss": STREET_EVENT_RIVAL_THIEF_LOSS_GOLD_LOSS,
+		},
+	]
+
+
+func _apply_street_event_payload(payload: Dictionary, source: StringName) -> void:
+	var event_id: StringName = StringName(str(payload.get("id", "unknown")))
+	var event_source: StringName = StringName("GameState.street_event.%s" % String(event_id))
+	var result_payload: Dictionary = payload.duplicate(true)
+	result_payload["trigger_source"] = source
+	result_payload["action_counter"] = _street_event_action_counter
+
+	match event_id:
+		&"guard_patrol":
+			var gold_loss: int = maxi(0, int(result_payload.get("gold_loss", STREET_EVENT_GUARD_PATROL_GOLD_LOSS)))
+			var old_gold: int = get_resource(&"gold")
+			var new_gold: int = maxi(0, old_gold - gold_loss)
+			set_resource(&"gold", new_gold, event_source)
+			result_payload["gold_delta"] = new_gold - old_gold
+		&"lucky_mark":
+			var gold_bonus: int = maxi(0, int(result_payload.get("gold_bonus", STREET_EVENT_LUCKY_MARK_GOLD_BONUS)))
+			add_resource(&"gold", gold_bonus, event_source)
+			result_payload["gold_delta"] = gold_bonus
+		&"rival_thief":
+			var outcome: String = String(result_payload.get("outcome", "loss"))
+			if outcome == "win":
+				var win_bonus: int = maxi(0, int(result_payload.get("gold_bonus", STREET_EVENT_RIVAL_THIEF_WIN_GOLD_BONUS)))
+				add_resource(&"gold", win_bonus, event_source)
+				result_payload["gold_delta"] = win_bonus
+			else:
+				var rival_loss: int = maxi(0, int(result_payload.get("gold_loss", STREET_EVENT_RIVAL_THIEF_LOSS_GOLD_LOSS)))
+				var previous_gold: int = get_resource(&"gold")
+				var adjusted_gold: int = maxi(0, previous_gold - rival_loss)
+				set_resource(&"gold", adjusted_gold, event_source)
+				result_payload["gold_delta"] = adjusted_gold - previous_gold
+		_:
+			result_payload["gold_delta"] = 0
+
+	EventBus.street_event_triggered.emit(event_id, result_payload)
 
 func _apply_pickpocket_progress(xp_delta: int, source: StringName) -> void:
 	if xp_delta <= 0:
