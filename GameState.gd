@@ -12,6 +12,13 @@ const MUTINY_THRESHOLD: float = 25.0
 const DEBUG_BUILD_FEATURE: StringName = &"debug"
 const DEBUG_COMMAND_SOURCE: StringName = &"DebugCommand"
 
+const THUG_UNLOCK_GOLD: int = 100
+const CAPTAIN_UNLOCK_GOLD: int = 750
+const CAPTAIN_UNLOCK_CREW: int = 3
+const PIRATE_KING_UNLOCK_GOLD: int = 2500
+const PIRATE_KING_UNLOCK_CREW: int = 8
+const PIRATE_KING_UNLOCK_LOYALTY: float = 70.0
+
 @export var save_manager_path: NodePath = NodePath("/root/SaveManager")
 @export var time_manager_path: NodePath = NodePath("/root/TimeManager")
 
@@ -71,6 +78,8 @@ func get_phase() -> int:
 func set_phase(new_phase: int, reason: StringName = &"GameState.set_phase") -> void:
 	if new_phase == _phase:
 		return
+	if not _can_set_phase(new_phase, reason):
+		return
 	var old_phase: int = _phase
 	_phase = new_phase
 	_mark_active()
@@ -88,6 +97,7 @@ func set_resource(resource_name: StringName, new_value: int, source: StringName 
 	_resources[resource_name] = new_value
 	_mark_active()
 	EventBus.resource_changed.emit(resource_name, old_value, new_value, source)
+	_evaluate_phase_unlocks(source)
 
 
 func add_resource(resource_name: StringName, amount: int, source: StringName = &"GameState.add_resource") -> void:
@@ -99,11 +109,13 @@ func set_loyalty(new_loyalty: float) -> void:
 	_mark_active()
 	if _loyalty <= MUTINY_THRESHOLD:
 		EventBus.mutiny_warning.emit(_loyalty, MUTINY_THRESHOLD, 60.0)
+	_evaluate_phase_unlocks(&"GameState.set_loyalty")
 
 
 func set_crew_roster(roster: Array) -> void:
 	_crew_roster = roster.duplicate(true)
 	_mark_active()
+	_evaluate_phase_unlocks(&"GameState.set_crew_roster")
 
 
 func get_crew_roster() -> Array:
@@ -264,6 +276,79 @@ func _execute_set_phase_command(command_parts: PackedStringArray, raw_command: S
 	set_phase(phase_value, DEBUG_COMMAND_SOURCE)
 	_emit_debug_feedback(true, raw_command, "Set phase to %s." % phase_name)
 	return true
+
+
+func can_unlock_phase(phase: int) -> bool:
+	return _meets_unlock_conditions(phase)
+
+
+func get_next_unlockable_phase() -> int:
+	var next_phase: int = _phase + 1
+	if next_phase > Phase.PIRATE_KING:
+		return -1
+	if _meets_unlock_conditions(next_phase):
+		return next_phase
+	return -1
+
+
+func _can_set_phase(new_phase: int, reason: StringName) -> bool:
+	if new_phase < Phase.PICKPOCKET or new_phase > Phase.PIRATE_KING:
+		push_warning("Attempted to set invalid phase value: %d" % new_phase)
+		return false
+	if _is_phase_override_reason(reason):
+		return true
+	if new_phase <= _phase:
+		return true
+	if new_phase != _phase + 1:
+		push_warning("Phase progression must advance sequentially. Current=%d Requested=%d" % [_phase, new_phase])
+		return false
+	if not _meets_unlock_conditions(new_phase):
+		push_warning("Unlock conditions are not met for phase %s." % _phase_name_from_value(new_phase))
+		return false
+	return true
+
+
+func _is_phase_override_reason(reason: StringName) -> bool:
+	return reason == DEBUG_COMMAND_SOURCE or String(reason).begins_with("SaveManager")
+
+
+func _evaluate_phase_unlocks(source: StringName) -> void:
+	if source == DEBUG_COMMAND_SOURCE:
+		return
+	if String(source).begins_with("SaveManager"):
+		return
+	var next_phase: int = _phase + 1
+	while next_phase <= Phase.PIRATE_KING and _meets_unlock_conditions(next_phase):
+		set_phase(next_phase, &"GameState.auto_unlock")
+		next_phase = _phase + 1
+
+
+func _meets_unlock_conditions(phase: int) -> bool:
+	match phase:
+		Phase.PICKPOCKET:
+			return true
+		Phase.THUG:
+			return get_resource(&"gold") >= THUG_UNLOCK_GOLD
+		Phase.CAPTAIN:
+			return get_resource(&"gold") >= CAPTAIN_UNLOCK_GOLD and _crew_roster.size() >= CAPTAIN_UNLOCK_CREW
+		Phase.PIRATE_KING:
+			return get_resource(&"gold") >= PIRATE_KING_UNLOCK_GOLD and _crew_roster.size() >= PIRATE_KING_UNLOCK_CREW and _loyalty >= PIRATE_KING_UNLOCK_LOYALTY
+		_:
+			return false
+
+
+func _phase_name_from_value(phase: int) -> String:
+	match phase:
+		Phase.PICKPOCKET:
+			return "pickpocket"
+		Phase.THUG:
+			return "thug"
+		Phase.CAPTAIN:
+			return "captain"
+		Phase.PIRATE_KING:
+			return "pirate_king"
+		_:
+			return "unknown"
 
 
 func _phase_value_from_name(phase_name: String) -> int:
