@@ -142,6 +142,33 @@ func is_first_crew_slot_unlocked() -> bool:
 	return _crew_slots_unlocked >= 1
 
 
+
+func get_pickpocket_level() -> int:
+	return _pickpocket_level
+
+
+func get_pickpocket_xp() -> int:
+	return _pickpocket_xp
+
+
+func get_pickpocket_next_level_xp_requirement() -> int:
+	if _pickpocket_level >= PICKPOCKET_MAX_LEVEL:
+		return _get_pickpocket_level_xp_threshold(PICKPOCKET_MAX_LEVEL)
+	return _get_pickpocket_level_xp_threshold(_pickpocket_level + 1)
+
+
+func get_progression_hint_text() -> String:
+	var next_phase: int = _phase + 1
+	if next_phase <= Phase.PIRATE_KING:
+		var requirements: Array[String] = _get_phase_requirement_hints(next_phase)
+		if not requirements.is_empty():
+			return "Next phase (%s): %s" % [_phase_name_from_value(next_phase).capitalize(), ", ".join(requirements)]
+
+	var pickpocket_hint: String = _build_pickpocket_unlock_hint()
+	if not pickpocket_hint.is_empty():
+		return pickpocket_hint
+	return "All current street progression goals are complete."
+
 func set_phase(new_phase: int, reason: StringName = &"GameState.set_phase") -> void:
 	if new_phase == _phase:
 		return
@@ -372,6 +399,55 @@ func get_next_unlockable_phase() -> int:
 		return next_phase
 	return -1
 
+
+
+func _get_phase_requirement_hints(phase: int) -> Array[String]:
+	var requirements: Array[String] = []
+	match phase:
+		Phase.THUG:
+			if get_resource(&"gold") < THUG_UNLOCK_GOLD:
+				requirements.append("Gold %d/%d" % [get_resource(&"gold"), THUG_UNLOCK_GOLD])
+		Phase.CAPTAIN:
+			if get_resource(&"gold") < CAPTAIN_UNLOCK_GOLD:
+				requirements.append("Gold %d/%d" % [get_resource(&"gold"), CAPTAIN_UNLOCK_GOLD])
+			if _crew_roster.size() < CAPTAIN_UNLOCK_CREW:
+				requirements.append("Crew %d/%d" % [_crew_roster.size(), CAPTAIN_UNLOCK_CREW])
+		Phase.PIRATE_KING:
+			if get_resource(&"gold") < PIRATE_KING_UNLOCK_GOLD:
+				requirements.append("Gold %d/%d" % [get_resource(&"gold"), PIRATE_KING_UNLOCK_GOLD])
+			if _crew_roster.size() < PIRATE_KING_UNLOCK_CREW:
+				requirements.append("Crew %d/%d" % [_crew_roster.size(), PIRATE_KING_UNLOCK_CREW])
+			if _loyalty < PIRATE_KING_UNLOCK_LOYALTY:
+				requirements.append("Loyalty %.1f/%.1f" % [_loyalty, PIRATE_KING_UNLOCK_LOYALTY])
+	return requirements
+
+
+func _build_pickpocket_unlock_hint() -> String:
+	var next_level: int = _pickpocket_level + 1
+	if next_level > PICKPOCKET_MAX_LEVEL:
+		return "Pickpocket mastery reached (level %d)." % PICKPOCKET_MAX_LEVEL
+
+	var threshold: int = _get_pickpocket_level_xp_threshold(next_level)
+	var missing_xp: int = maxi(0, threshold - _pickpocket_xp)
+	var unlock_notes: Array[String] = []
+
+	if PICKPOCKET_UPGRADE_UNLOCK_GATES.has(next_level):
+		var upgrades: Array = PICKPOCKET_UPGRADE_UNLOCK_GATES[next_level]
+		var upgrade_labels: Array[String] = []
+		for upgrade_variant: Variant in upgrades:
+			upgrade_labels.append(String(upgrade_variant).replace("_", " "))
+		if not upgrade_labels.is_empty():
+			unlock_notes.append("upgrade: %s" % ", ".join(upgrade_labels))
+
+	if PICKPOCKET_CREW_SLOT_UNLOCK_GATES.has(next_level):
+		var crew_slots: int = int(PICKPOCKET_CREW_SLOT_UNLOCK_GATES[next_level])
+		unlock_notes.append("crew slots: %d" % crew_slots)
+
+	var unlock_suffix: String = ""
+	if not unlock_notes.is_empty():
+		unlock_suffix = " (unlocks %s)" % "; ".join(unlock_notes)
+
+	return "Pickpocket level %d -> %d: %d XP to go%s" % [_pickpocket_level, next_level, missing_xp, unlock_suffix]
 
 func _can_set_phase(new_phase: int, reason: StringName) -> bool:
 	if new_phase < Phase.PICKPOCKET or new_phase > Phase.PIRATE_KING:
