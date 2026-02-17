@@ -1,11 +1,13 @@
 extends Node
 class_name SaveManager
 
+const CrewMember = preload("res://systems/CrewMember.gd")
+
 # Save file path: user://savegame.json
 # Keys used in payload:
 # - save_version: integer schema version.
 # - resources: Dictionary[String -> int]
-# - crew_roster: Array[Dictionary] (each crew entry has id, name, role, level, loyalty).
+# - crew_roster: Array[Dictionary] (each crew entry has id, name, combat, stealth, loyalty, upkeep, assignment).
 # - current_phase: integer progression phase.
 # - last_save_unix: integer unix timestamp for most recent write.
 # - last_active_unix: integer unix timestamp for most recent in-session activity.
@@ -18,12 +20,14 @@ const SAVE_VERSION := 1
 
 @export var debug_logging_enabled: bool = false
 
-const DEFAULT_CREW_MEMBER := {
+const DEFAULT_CREW_MEMBER: Dictionary = {
 	"id": "",
-	"name": "",
-	"role": "deckhand",
-	"level": 1,
-	"loyalty": 100.0,
+	"name": "Deckhand",
+	"combat": 25,
+	"stealth": 25,
+	"loyalty": 50,
+	"upkeep": 1,
+	"assignment": "",
 }
 
 const DEFAULT_SAVE_STATE := {
@@ -139,13 +143,8 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 		for crew_member: Variant in incoming_crew:
 			if typeof(crew_member) != TYPE_DICTIONARY:
 				continue
-			var normalized_member: Dictionary = DEFAULT_CREW_MEMBER.duplicate(true)
-			normalized_member["id"] = str(crew_member.get("id", normalized_member["id"]))
-			normalized_member["name"] = str(crew_member.get("name", normalized_member["name"]))
-			normalized_member["role"] = str(crew_member.get("role", normalized_member["role"]))
-			normalized_member["level"] = maxi(1, int(crew_member.get("level", normalized_member["level"])))
-			normalized_member["loyalty"] = clampf(float(crew_member.get("loyalty", normalized_member["loyalty"])), 0.0, 100.0)
-			normalized_roster.append(normalized_member)
+			var normalized_member: CrewMember = CrewMember.from_dict(crew_member)
+			normalized_roster.append(normalized_member.to_dict())
 		normalized["crew_roster"] = normalized_roster
 
 	normalized["current_phase"] = maxi(0, int(payload.get("current_phase", normalized["current_phase"])))
