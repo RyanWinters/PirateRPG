@@ -29,7 +29,7 @@ theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="MarginContainer/VBox"]
 layout_mode = 2
-text = "Street Hustle"
+text = "Street Hustle & Expeditions"
 
 [node name="GoldRow" type="HBoxContainer" parent="MarginContainer/VBox"]
 layout_mode = 2
@@ -64,3 +64,99 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "..."
 autowrap_mode = 3
+
+[node name="SeparatorExpeditions" type="HSeparator" parent="MarginContainer/VBox"]
+layout_mode = 2
+
+[node name="ExpeditionHeader" type="Label" parent="MarginContainer/VBox"]
+layout_mode = 2
+text = "Crew Roster & Expedition Management"
+
+[node name="ExpeditionColumns" type="HBoxContainer" parent="MarginContainer/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="AssignmentColumn" type="VBoxContainer" parent="MarginContainer/VBox/ExpeditionColumns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="IdleCrewTitle" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
+layout_mode = 2
+text = "Idle Crew"
+
+[node name="IdleCrewList" type="ItemList" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 180)
+layout_mode = 2
+size_flags_vertical = 3
+select_mode = 2
+allow_reselect = true
+
+[node name="TemplateRow" type="HBoxContainer" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TemplateLabel" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn/TemplateRow"]
+layout_mode = 2
+text = "Template"
+
+[node name="TemplatePicker" type="OptionButton" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn/TemplateRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TemplateInfoLabel" type="RichTextLabel" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 150)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="AssignmentHintLabel" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select idle crew and an expedition template."
+autowrap_mode = 3
+
+[node name="StartExpeditionButton" type="Button" parent="MarginContainer/VBox/ExpeditionColumns/AssignmentColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Start Expedition"
+
+[node name="StatusColumn" type="VBoxContainer" parent="MarginContainer/VBox/ExpeditionColumns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ActiveTitle" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
+layout_mode = 2
+text = "Active Expeditions"
+
+[node name="ActiveExpeditionsLabel" type="RichTextLabel" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 120)
+layout_mode = 2
+size_flags_vertical = 3
+fit_content = true
+scroll_active = false
+text = "No active expeditions."
+
+[node name="ClaimableTitle" type="Label" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
+layout_mode = 2
+text = "Completed / Claimable Expeditions"
+
+[node name="ClaimableExpeditionsList" type="ItemList" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 140)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ClaimButton" type="Button" parent="MarginContainer/VBox/ExpeditionColumns/StatusColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Claim Selected"
