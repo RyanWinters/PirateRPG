@@ -31,5 +31,6 @@ When debug commands are enabled, `GameState` also wires development hotkeys:
 - `F6` -> `add_resource gold 100`
 - `F7` -> `set_resource food 50`
 - `F8` -> `set_phase captain`
+- `F9` -> calls `steal_click()` to test anti-spam and gain scaling
 
 These are intentionally simple examples and can be adjusted per team workflow.

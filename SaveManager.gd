@@ -32,6 +32,8 @@ const DEFAULT_SAVE_STATE := {
 	"current_phase": 0,
 	"last_save_unix": 0,
 	"last_active_unix": 0,
+	"last_steal_click_msec": -225,
+	"passive_tick_accumulator": 0.0,
 }
 
 
@@ -141,6 +143,8 @@ func _normalize_state(payload: Dictionary) -> Dictionary:
 	normalized["current_phase"] = maxi(0, int(payload.get("current_phase", normalized["current_phase"])))
 	normalized["last_save_unix"] = maxi(0, int(payload.get("last_save_unix", normalized["last_save_unix"])))
 	normalized["last_active_unix"] = maxi(0, int(payload.get("last_active_unix", normalized["last_active_unix"])))
+	normalized["last_steal_click_msec"] = int(payload.get("last_steal_click_msec", normalized["last_steal_click_msec"]))
+	normalized["passive_tick_accumulator"] = clampf(float(payload.get("passive_tick_accumulator", normalized["passive_tick_accumulator"])), 0.0, 1.0)
 	normalized["save_version"] = SAVE_VERSION
 
 	return normalized
